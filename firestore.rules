@@ -1,0 +1,167 @@
+rules_version = '2';
+
+// AgroGestão — regras restritivas por fazenda.
+// Todo dado de negócio vive em farms/{farmId}/... e só é acessível a quem tem
+// um documento em farms/{farmId}/members/{uid}. Papéis: owner, admin, viewer.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function memberPath(f) { return /databases/$(database)/documents/farms/$(f)/members/$(request.auth.uid); }
+    function isMember(f) { return signedIn() && exists(memberPath(f)); }
+    function role(f) { return get(memberPath(f)).data.role; }
+    function canEdit(f) { return isMember(f) && role(f) in ['owner', 'admin']; }
+    function isOwner(f) { return isMember(f) && role(f) == 'owner'; }
+
+    function d() { return request.resource.data; }
+    function str(v, min, max) { return v is string && v.size() >= min && v.size() <= max; }
+    function optStr(m, k, max) { return !(k in m) || m[k] == null || str(m[k], 0, max); }
+    function isDate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function optDate(m, k) { return !(k in m) || m[k] == null || isDate(m[k]); }
+    // Valores em centavos (inteiro), até R$ 1 bilhão.
+    function money(v) { return v is int && v >= 0 && v <= 100000000000; }
+    function optMoney(m, k) { return !(k in m) || m[k] == null || money(m[k]); }
+    function unchanged(k) { return request.resource.data[k] == resource.data[k]; }
+
+    // Usuário só lê/escreve o próprio perfil.
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid
+        && (request.method == 'delete' || d().keys().hasOnly(['name', 'email', 'updatedAt']));
+    }
+
+    // Consultas collectionGroup para descobrir fazendas do usuário e convites.
+    match /{path=**}/members/{memberId} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+    match /{path=**}/invites/{inviteId} {
+      allow read: if signedIn() && request.auth.token.email_verified == true
+        && resource.data.email == request.auth.token.email;
+    }
+
+    match /farms/{farmId} {
+      function validFarm() {
+        return d().keys().hasOnly(['name', 'ownerUid', 'ownerName', 'ownerPhone', 'ownerDocument', 'logoUrl', 'alertDays', 'createdAt', 'updatedAt'])
+          && str(d().name, 1, 100)
+          && optStr(d(), 'ownerName', 120) && optStr(d(), 'ownerPhone', 30) && optStr(d(), 'ownerDocument', 30)
+          && optStr(d(), 'logoUrl', 500000)
+          && d().alertDays is list && d().alertDays.size() <= 8;
+      }
+      allow read: if isMember(farmId);
+      allow create: if signedIn() && d().ownerUid == request.auth.uid && validFarm();
+      allow update: if canEdit(farmId) && unchanged('ownerUid') && validFarm();
+      allow delete: if false;
+
+      match /members/{uid} {
+        function validMember() {
+          return d().keys().hasOnly(['uid', 'email', 'name', 'role', 'joinedAt'])
+            && d().uid == uid && d().role in ['owner', 'admin', 'viewer'];
+        }
+        function invitePath() {
+          return /databases/$(database)/documents/farms/$(farmId)/invites/$(request.auth.token.email);
+        }
+        allow read: if isMember(farmId) || (signedIn() && uid == request.auth.uid);
+        allow create: if signedIn() && uid == request.auth.uid && validMember() && (
+          // Criador da fazenda vira owner (farm pode estar no mesmo lote).
+          (d().role == 'owner' && getAfter(/databases/$(database)/documents/farms/$(farmId)).data.ownerUid == request.auth.uid)
+          // Aceite de convite: e-mail verificado e papel igual ao convidado.
+          || (d().role != 'owner' && request.auth.token.email_verified == true
+              && d().email == request.auth.token.email
+              && exists(invitePath()) && get(invitePath()).data.role == d().role)
+        );
+        allow update: if isOwner(farmId) && uid != request.auth.uid && validMember()
+          && d().role in ['admin', 'viewer']
+          && d().diff(resource.data).affectedKeys().hasOnly(['role']);
+        allow delete: if (isOwner(farmId) && uid != request.auth.uid)
+          || (signedIn() && uid == request.auth.uid && resource.data.role != 'owner');
+      }
+
+      match /invites/{email} {
+        allow read: if canEdit(farmId);
+        allow create, update: if canEdit(farmId)
+          && d().keys().hasOnly(['email', 'role', 'farmName', 'invitedBy', 'createdAt'])
+          && d().email == email && d().role in ['admin', 'viewer'];
+        allow delete: if canEdit(farmId)
+          || (signedIn() && request.auth.token.email == email && exists(memberPath(farmId)));
+      }
+
+      match /laborTypes/{id} {
+        allow read: if isMember(farmId);
+        allow create, update: if canEdit(farmId)
+          && d().keys().hasOnly(['name', 'active', 'createdAt'])
+          && str(d().name, 1, 60) && d().active is bool;
+        allow delete: if false;
+      }
+
+      match /expenseCategories/{id} {
+        allow read: if isMember(farmId);
+        allow create, update: if canEdit(farmId)
+          && d().keys().hasOnly(['name', 'active', 'createdAt'])
+          && str(d().name, 1, 60) && d().active is bool;
+        allow delete: if false;
+      }
+
+      match /collaborators/{id} {
+        allow read: if isMember(farmId);
+        allow create, update: if canEdit(farmId)
+          && d().keys().hasOnly(['name', 'laborTypeId', 'phone', 'cpf', 'admissionDate', 'bond', 'referenceAmount', 'notes', 'active', 'createdAt', 'updatedAt'])
+          && str(d().name, 2, 120) && str(d().laborTypeId, 1, 64)
+          && d().bond in ['clt', 'diarista', 'autonomo', 'outro']
+          && d().active is bool
+          && optStr(d(), 'phone', 30) && optStr(d(), 'cpf', 14) && optStr(d(), 'notes', 1000)
+          && optDate(d(), 'admissionDate') && optMoney(d(), 'referenceAmount');
+        allow delete: if false; // Inativar preserva o histórico.
+      }
+
+      // Lote = registro imutável de uma operação de salvamento da planilha.
+      match /expenseBatches/{id} {
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId)
+          && d().keys().hasOnly(['createdBy', 'createdAt', 'laborTotal', 'otherTotal', 'total', 'count'])
+          && d().createdBy == request.auth.uid && d().createdAt == request.time
+          && money(d().laborTotal) && money(d().otherTotal) && money(d().total)
+          && d().count is int && d().count > 0 && d().count <= 450;
+        allow update, delete: if false;
+      }
+
+      match /expenseEntries/{id} {
+        function validEntry() {
+          return d().keys().hasOnly(['kind', 'date', 'amount', 'laborTypeId', 'laborTypeName', 'collaboratorId', 'collaboratorName',
+                                     'categoryId', 'categoryName', 'description', 'note', 'batchId', 'obligationId', 'createdBy', 'createdAt', 'updatedAt'])
+            && d().kind in ['labor', 'other'] && isDate(d().date)
+            && money(d().amount) && d().amount > 0
+            && optStr(d(), 'description', 300) && optStr(d(), 'note', 300)
+            && (d().kind == 'labor'
+                  ? (str(d().collaboratorId, 1, 64) && str(d().collaboratorName, 1, 120) && str(d().laborTypeId, 1, 64))
+                  : (str(d().categoryId, 1, 64) && str(d().categoryName, 1, 60)));
+        }
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId) && validEntry() && d().createdBy == request.auth.uid;
+        allow update: if canEdit(farmId) && validEntry() && unchanged('createdBy') && unchanged('kind');
+        allow delete: if canEdit(farmId);
+      }
+
+      match /obligations/{id} {
+        allow read: if isMember(farmId);
+        allow create, update: if canEdit(farmId)
+          && d().keys().hasOnly(['type', 'title', 'collaboratorId', 'collaboratorName', 'referencePeriod', 'dueDate', 'paidDate',
+                                 'amount', 'note', 'status', 'recurrence', 'nextId', 'createdAt', 'updatedAt'])
+          && d().type in ['ferias', 'adiantamento_ferias', 'terco_ferias', 'decimo_1', 'decimo_2', 'outro']
+          && str(d().collaboratorId, 1, 64) && str(d().collaboratorName, 1, 120)
+          && isDate(d().dueDate) && optDate(d(), 'paidDate') && optMoney(d(), 'amount')
+          && d().status in ['pendente', 'pago'] && d().recurrence in ['none', 'yearly']
+          && (d().status == 'pendente' || isDate(d().paidDate))
+          && optStr(d(), 'title', 100) && optStr(d(), 'note', 500) && optStr(d(), 'referencePeriod', 20);
+        allow delete: if canEdit(farmId);
+      }
+
+      // Log de auditoria: só inserção, sem edição nem exclusão.
+      match /logs/{id} {
+        allow read: if canEdit(farmId);
+        allow create: if isMember(farmId)
+          && d().keys().hasOnly(['action', 'detail', 'uid', 'at'])
+          && d().uid == request.auth.uid && d().at == request.time && str(d().action, 1, 60);
+        allow update, delete: if false;
+      }
+    }
+  }
+}
