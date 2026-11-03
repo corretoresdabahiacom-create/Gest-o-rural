@@ -169,6 +169,23 @@ service cloud.firestore {
         allow delete: if canEdit(farmId);
       }
 
+      // Planilhas de pesagem/valorização: documentos de trabalho editáveis.
+      // Ao registrar no histórico, viram pesagens coletivas imutáveis (weighings).
+      match /weighingSheets/{id} {
+        function validSheet() {
+          return d().keys().hasOnly(['name', 'date', 'rows', 'notes', 'kgPerArroba', 'unit', 'registeredAt', 'registeredSessionId', 'createdBy', 'createdAt', 'updatedAt'])
+            && str(d().name, 1, 120) && isDate(d().date) && d().rows is list && d().rows.size() <= 200
+            && d().kgPerArroba is number && d().kgPerArroba > 0 && d().kgPerArroba < 1000
+            && optStr(d(), 'notes', 2000);
+        }
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId) && validSheet() && d().createdBy == request.auth.uid;
+        // Depois de registrada no histórico, a planilha não muda mais (exceto o nome/observações).
+        allow update: if canEdit(farmId) && validSheet() && unchanged('createdBy')
+          && (!('registeredAt' in resource.data) || d().diff(resource.data).affectedKeys().hasOnly(['name', 'notes', 'updatedAt']));
+        allow delete: if canEdit(farmId) && !('registeredAt' in resource.data);
+      }
+
       // ======================= REBANHO =======================
       match /animalCategories/{id} {
         allow read: if isMember(farmId);

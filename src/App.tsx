@@ -18,6 +18,7 @@ const Reports = lazy(() => import('./pages/Reports'))
 const Settings = lazy(() => import('./pages/Settings'))
 const HerdModule = lazy(() => import('./pages/herd/HerdModule'))
 const Revenues = lazy(() => import('./pages/Revenues'))
+const Worksheet = lazy(() => import('./pages/weighing/Worksheet'))
 
 function Splash() {
   return <div className="flex min-h-dvh flex-col items-center justify-center gap-4"><Logo className="size-16" /><Spinner className="py-0" /></div>
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/configuracoes" element={<Settings />} />
           <Route path="/rebanho/*" element={<HerdModule />} />
           <Route path="/receitas" element={<Revenues />} />
+          <Route path="/planilha-pesagem" element={<Worksheet />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

@@ -206,3 +206,20 @@ describe('estorno e receitas', () => {
     await assertFails(getDoc(doc(as('intruso'), `farms/${F}/revenueEntries/herd-sale-s1`)))
   })
 })
+
+describe('planilha de pesagem', () => {
+  const sheet = { name: 'Pesagem', date: '2026-11-03', rows: [], kgPerArroba: 30, unit: 'vivo', createdBy: 'adm' }
+  it('editor cria, edita e exclui; leitor e outra fazenda não', async () => {
+    await assertSucceeds(setDoc(doc(as('adm'), `farms/${F}/weighingSheets/p1`), sheet))
+    await assertSucceeds(updateDoc(doc(as('adm'), `farms/${F}/weighingSheets/p1`), { name: 'Outra' }))
+    await assertFails(setDoc(doc(as('leitor'), `farms/${F}/weighingSheets/p2`), { ...sheet, createdBy: 'leitor' }))
+    await assertFails(getDoc(doc(as('intruso'), `farms/${F}/weighingSheets/p1`)))
+    await assertSucceeds(deleteDoc(doc(as('adm'), `farms/${F}/weighingSheets/p1`)))
+  })
+  it('depois de registrada, valores travados e não pode ser excluída', async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), `farms/${F}/weighingSheets/p1`), { ...sheet, registeredAt: new Date() }))
+    await assertFails(updateDoc(doc(as('adm'), `farms/${F}/weighingSheets/p1`), { kgPerArroba: 15 }))
+    await assertSucceeds(updateDoc(doc(as('adm'), `farms/${F}/weighingSheets/p1`), { notes: 'ok' }))
+    await assertFails(deleteDoc(doc(as('adm'), `farms/${F}/weighingSheets/p1`)))
+  })
+})
