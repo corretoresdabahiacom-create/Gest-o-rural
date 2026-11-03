@@ -1,0 +1,11 @@
+{
+  // Cloudflare Workers (assets estáticos). O app é uma SPA: qualquer rota
+  // desconhecida (ex.: /rebanho/pesagem) devolve o index.html.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gest-o-rural",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
