@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { onAuthStateChanged, type User } from 'firebase/auth'
-import { collection, collectionGroup, doc, getDoc, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore'
+import { collection, collectionGroup, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
 import { addLog, farmDoc, newId, useFarmCollection } from '../lib/db'
 import { DEFAULT_ANIMAL_CATEGORIES, DEFAULT_ARROBA } from '../lib/herd'
@@ -15,6 +15,7 @@ interface AppState {
   authReady: boolean
   farms: FarmRef[]
   farmsReady: boolean
+  farmsError: boolean
   invites: Invite[]
   farm: Farm | null
   role: Role | null
@@ -40,6 +41,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(false)
   const [farms, setFarms] = useState<FarmRef[]>([])
   const [farmsReady, setFarmsReady] = useState(false)
+  const [farmsError, setFarmsError] = useState(false)
   const [invites, setInvites] = useState<Invite[]>([])
   const [farmId, setFarmId] = useState<string | null>(null)
   const [farm, setFarm] = useState<Farm | null>(null)
@@ -47,22 +49,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => onAuthStateChanged(auth, (u) => { setUser(u); setAuthReady(true) }), [])
 
-  // Descobre as fazendas do usuário via seus documentos de membro.
+  // Descobre as fazendas do usuário em users/{uid}/memberships (não exige índice).
   useEffect(() => {
-    if (!user) { setFarms([]); setFarmId(null); setFarmsReady(false); return }
-    const q = query(collectionGroup(db, 'members'), where('uid', '==', user.uid))
+    if (!user) { setFarms([]); setFarmId(null); setFarmsReady(false); setFarmsError(false); return }
+    setFarmsError(false)
+    // Migração: fazendas criadas antes deste atalho são achadas pelos documentos de membro
+    // (collectionGroup) e gravadas no atalho. Falha em silêncio se o índice não existir.
+    getDocs(query(collectionGroup(db, 'members'), where('uid', '==', user.uid))).then(async (snap) => {
+      if (snap.empty) return
+      const b = writeBatch(db)
+      for (const m of snap.docs) {
+        const fid = m.ref.parent.parent!.id
+        b.set(doc(db, 'users', user.uid, 'memberships', fid), { farmId: fid, role: m.data().role, createdAt: serverTimestamp() })
+      }
+      await b.commit()
+    }).catch(() => {})
+    const q = collection(db, 'users', user.uid, 'memberships')
     return onSnapshot(q, async (snap) => {
-      const list = await Promise.all(snap.docs.map(async (m) => {
-        const id = m.ref.parent.parent!.id
+      const list = (await Promise.all(snap.docs.map(async (m) => {
+        const id = m.id
         const f = await getDoc(doc(db, 'farms', id)).catch(() => null)
-        return { id, name: (f?.data()?.name as string) ?? 'Fazenda', role: m.data().role as Role }
-      }))
+        if (!f || !f.exists()) return null
+        const mem = await getDoc(doc(db, 'farms', id, 'members', user.uid)).catch(() => null)
+        if (!mem || !mem.exists()) return null
+        return { id, name: (f.data()?.name as string) ?? 'Fazenda', role: mem.data()!.role as Role }
+      }))).filter((x): x is FarmRef => !!x)
       list.sort(byName)
       setFarms(list)
       const saved = localStorage.getItem('ag-farm')
       setFarmId((cur) => (cur && list.some((f) => f.id === cur) ? cur : list.find((f) => f.id === saved)?.id ?? list[0]?.id ?? null))
+      setFarmsError(false)
       setFarmsReady(true)
-    }, () => setFarmsReady(true))
+    }, () => { setFarmsError(true); setFarmsReady(true) })
   }, [user, tick])
 
   // Convites pendentes (exige e-mail verificado — validado também nas regras).
@@ -95,6 +113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const b1 = writeBatch(db)
     b1.set(doc(db, 'farms', id), { name: name.trim(), ownerUid: u.uid, ownerName: u.displayName ?? '', alertDays: DEFAULT_ALERT_DAYS, arroba: { ...DEFAULT_ARROBA, outraLabel: 'Outra unidade' }, createdAt: serverTimestamp() })
     b1.set(farmDoc(id, 'members', u.uid), { uid: u.uid, email: u.email ?? '', name: u.displayName ?? '', role: 'owner', joinedAt: serverTimestamp() })
+    b1.set(doc(db, 'users', u.uid, 'memberships', id), { farmId: id, role: 'owner', createdAt: serverTimestamp() })
     await b1.commit()
     const b2 = writeBatch(db)
     for (const n of DEFAULT_LABOR_TYPES) b2.set(farmDoc(id, 'laborTypes', newId(id, 'laborTypes')), { name: n, active: true, createdAt: serverTimestamp() })
@@ -109,6 +128,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const u = auth.currentUser!
     const b = writeBatch(db)
     b.set(farmDoc(inv.farmId, 'members', u.uid), { uid: u.uid, email: u.email!, name: u.displayName ?? '', role: inv.role, joinedAt: serverTimestamp() })
+    b.set(doc(db, 'users', u.uid, 'memberships', inv.farmId), { farmId: inv.farmId, role: inv.role, createdAt: serverTimestamp() })
     await b.commit()
     const b2 = writeBatch(db)
     b2.delete(farmDoc(inv.farmId, 'invites', inv.email))
@@ -118,7 +138,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<AppState>(() => ({
-    user, authReady, farms, farmsReady, invites, farm, role,
+    user, authReady, farms, farmsReady, farmsError, invites, farm, role,
     canEdit: role === 'owner' || role === 'admin',
     laborTypes: [...lt.data].sort(byName),
     categories: [...cat.data].sort(byName),
@@ -128,7 +148,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectFarm: setFarmId,
     createFarm, acceptInvite,
     refreshFarms: () => setTick((t) => t + 1),
-  }), [user, authReady, farms, farmsReady, invites, farm, role, lt, cat, col, obl, createFarm, acceptInvite])
+  }), [user, authReady, farms, farmsReady, farmsError, invites, farm, role, lt, cat, col, obl, createFarm, acceptInvite])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

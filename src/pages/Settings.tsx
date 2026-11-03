@@ -141,8 +141,14 @@ function Members() {
       addLog(b, farm!.id, 'convite_criado', `${mail} como ${newRole}`)
       await b.commit()
       setEmail('')
-      toast('success', 'Convite criado. A pessoa deve criar conta com este e-mail, confirmá-lo e aceitar o convite.')
+      await copyLink(mail)
     } catch (e) { toast('error', friendlyError(e)) }
+  }
+  function inviteLink(mail: string) { return `${window.location.origin}/?convite=${encodeURIComponent(mail)}` }
+  async function copyLink(mail: string) {
+    const text = `Você foi convidado para a fazenda ${farm!.name} no Gestão Rural. Acesse, crie sua conta com o e-mail ${mail} e aceite o convite: ${inviteLink(mail)}`
+    try { await navigator.clipboard.writeText(text); toast('success', 'Link de convite copiado. Envie por WhatsApp ou e-mail.') }
+    catch { window.prompt('Copie o link de convite:', text) }
   }
   async function changeRole(m: Member, r: Role) {
     try { const b = writeBatch(db); b.update(farmDoc(farm!.id, 'members', m.uid), { role: r }); addLog(b, farm!.id, 'papel_alterado', `${m.email}: ${r}`); await b.commit() }
@@ -176,6 +182,7 @@ function Members() {
               <Mail className="size-4 text-stone-400" />
               <span className="flex-1 truncate text-stone-500">{i.email}</span>
               <Badge tone="amber">Convite · {ROLE_LABEL[i.role]}</Badge>
+              {canEdit && <Button size="sm" variant="ghost" onClick={() => copyLink(i.email)}>Copiar link</Button>}
               <Button size="sm" variant="ghost" onClick={() => deleteDoc(farmDoc(farm!.id, 'invites', i.email)).catch((e) => toast('error', friendlyError(e)))} aria-label="Cancelar convite"><Trash2 className="size-4" /></Button>
             </li>
           ))}
@@ -220,6 +227,35 @@ function Logs() {
   )
 }
 
+function MyFarms() {
+  const { farms, farm, selectFarm, createFarm } = useApp()
+  const toast = useToast()
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function add() {
+    if (!name.trim()) return
+    setBusy(true)
+    try { await createFarm(name); setName(''); toast('success', 'Fazenda criada.') } catch (e) { toast('error', friendlyError(e)) } finally { setBusy(false) }
+  }
+  return (
+    <Card title="Minhas fazendas">
+      <ul className="divide-y divide-stone-100 dark:divide-stone-800">
+        {farms.map((f) => (
+          <li key={f.id} className="flex items-center gap-2 px-4 py-2.5 text-sm">
+            <span className="flex-1 truncate font-medium">{f.name}</span>
+            <Badge tone="stone">{ROLE_LABEL[f.role]}</Badge>
+            {f.id === farm?.id ? <Badge tone="green">Aberta</Badge> : <Button size="sm" variant="secondary" onClick={() => selectFarm(f.id)}>Abrir</Button>}
+          </li>
+        ))}
+      </ul>
+      <form className="flex flex-wrap gap-2 border-t border-stone-200 p-3 dark:border-stone-800" onSubmit={(e) => { e.preventDefault(); add() }}>
+        <input className="input min-w-48 flex-1" placeholder="Nome da nova fazenda" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+        <Button type="submit" loading={busy}>Criar nova fazenda</Button>
+      </form>
+    </Card>
+  )
+}
+
 export default function Settings() {
   const { laborTypes, canEdit, dataReady } = useApp()
   const { dark, toggle } = useTheme()
@@ -239,6 +275,7 @@ export default function Settings() {
           </Card>
         </div>
         <Members />
+        <MyFarms />
         <Card title="Tipos de mão de obra">{dataReady ? <NamedList collection="laborTypes" items={laborTypes} noun="tipo" /> : <Spinner />}</Card>
         {canEdit && <div className="lg:col-span-2"><Logs /></div>}
       </div>

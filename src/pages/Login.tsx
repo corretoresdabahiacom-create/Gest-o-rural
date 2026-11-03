@@ -9,9 +9,10 @@ import { Button, ErrorBox, Field } from '../components/ui'
 type Mode = 'login' | 'signup' | 'reset'
 
 export default function Login() {
-  const [mode, setMode] = useState<Mode>('login')
+  const invited = new URLSearchParams(window.location.search).get('convite') ?? ''
+  const [mode, setMode] = useState<Mode>(invited ? 'signup' : 'login')
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(invited)
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')

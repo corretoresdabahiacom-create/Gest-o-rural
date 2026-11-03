@@ -29,6 +29,18 @@ service cloud.firestore {
         && (request.method == 'delete' || d().keys().hasOnly(['name', 'email', 'updatedAt']));
     }
 
+    // Atalho de descoberta: users/{uid}/memberships/{farmId} lista as fazendas do usuário
+    // sem depender de índice de collectionGroup. Só existe se o membership real existe.
+    match /users/{uid}/memberships/{farmId} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['farmId', 'role', 'createdAt'])
+        && request.resource.data.farmId == farmId
+        && existsAfter(/databases/$(database)/documents/farms/$(farmId)/members/$(uid))
+        && getAfter(/databases/$(database)/documents/farms/$(farmId)/members/$(uid)).data.role == request.resource.data.role;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
     // Consultas collectionGroup para descobrir fazendas do usuário e convites.
     match /{path=**}/members/{memberId} {
       allow read: if signedIn() && resource.data.uid == request.auth.uid;
