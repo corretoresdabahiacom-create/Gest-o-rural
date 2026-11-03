@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useApp } from '../contexts/AppContext'
-import { useEntries } from '../lib/db'
+import { useEntries, useRevenues } from '../lib/db'
 import { monthRange, today } from '../lib/format'
 import { buildReport, REPORTS, type Filters, type ReportId } from '../lib/reports'
 import { ReportView } from '../components/ReportView'
@@ -18,10 +18,11 @@ export default function Reports() {
 
   const a = useEntries(farm!.id, f.start, f.end)
   const b = useEntries(rid === 'comparativo' && f.compareStart && f.compareEnd ? farm!.id : null, f.compareStart ?? '', f.compareEnd ?? '')
+  const rv = useRevenues(farm!.id, f.start, f.end)
   const laborTypeOf = (id: string) => collaborators.find((c) => c.id === id)?.laborTypeId
-  const report = useMemo(() => (invalid ? null : buildReport(rid, f, a.data, obligations, t, laborTypeOf, b.data)),
+  const report = useMemo(() => (invalid ? null : buildReport(rid, f, a.data, obligations, t, laborTypeOf, b.data, rv.data)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rid, f, a.data, b.data, obligations, t, invalid])
+    [rid, f, a.data, b.data, rv.data, obligations, t, invalid])
 
   const quick = (kind: 'month' | 'year' | 'lastMonth') => {
     if (kind === 'year') return setF({ ...f, start: `${t.slice(0, 4)}-01-01`, end: `${t.slice(0, 4)}-12-31` })
@@ -30,7 +31,7 @@ export default function Reports() {
     setF({ ...f, start: s, end: e })
   }
   const set = (k: keyof Filters) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
-  const loading = ENTRY_REPORTS.includes(rid) && (a.loading || (rid === 'comparativo' && b.loading))
+  const loading = (ENTRY_REPORTS.includes(rid) && (a.loading || (rid === 'comparativo' && b.loading))) || ((rid === 'receitas' || rid === 'mensal') && rv.loading)
 
   return (
     <>

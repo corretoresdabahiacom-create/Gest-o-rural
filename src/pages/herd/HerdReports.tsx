@@ -10,7 +10,7 @@ import { Button, Card, ErrorBox, Field, Spinner, cx } from '../../components/ui'
 import { ReportView } from '../../components/ReportView'
 import { unitLabel } from '../../components/herd/UnitFields'
 
-const NEEDS_PERIOD: HerdReportId[] = ['evolucao', 'compras', 'vendas', 'mortes', 'transferencias', 'movimentos', 'investido', 'bruto', 'despesas', 'liquido', 'custo', 'vac_lote', 'vac_hist']
+const NEEDS_PERIOD: HerdReportId[] = ['estornos', 'evolucao', 'compras', 'vendas', 'mortes', 'transferencias', 'movimentos', 'investido', 'bruto', 'despesas', 'liquido', 'custo', 'vac_lote', 'vac_hist']
 
 export default function HerdReports() {
   const { farm } = useApp()
@@ -18,12 +18,12 @@ export default function HerdReports() {
   const t = today()
   const [rid, setRid] = useState<HerdReportId>('atual')
   const [f, setF] = useState<HerdFilters>({ start: `${t.slice(0, 4)}-01-01`, end: t, lotId: '', categoryId: '', sex: '', movType: '', seller: '', buyer: '' })
-  const [data, setData] = useState<{ movs: HerdMovement[]; purchases: Purchase[]; sales: Sale[]; deaths: Death[]; transfers: Transfer[] } | null>(null)
+  const [data, setData] = useState<{ movs: HerdMovement[]; reversals: { originalId: string; date: string; reason: string }[]; purchases: Purchase[]; sales: Sale[]; deaths: Death[]; transfers: Transfer[] } | null>(null)
   const [err, setErr] = useState('')
   useEffect(() => {
     const id = farm!.id
-    Promise.all([fetchMovements(id), fetchOps<Purchase>(id, 'purchases'), fetchOps<Sale>(id, 'sales'), fetchOps<Death>(id, 'mortalityRecords'), fetchOps<Transfer>(id, 'herdTransfers')])
-      .then(([movs, purchases, sales, deaths, transfers]) => setData({ movs, purchases, sales, deaths, transfers })).catch((e) => setErr(friendlyError(e)))
+    Promise.all([fetchMovements(id), fetchOps<Purchase>(id, 'purchases'), fetchOps<Sale>(id, 'sales'), fetchOps<Death>(id, 'mortalityRecords'), fetchOps<Transfer>(id, 'herdTransfers'), fetchOps<{ originalId: string; date: string; reason: string }>(id, 'reversals')])
+      .then(([movs, purchases, sales, deaths, transfers, reversals]) => setData({ movs, purchases, sales, deaths, transfers, reversals })).catch((e) => setErr(friendlyError(e)))
   }, [farm, lots])
   const invalid = f.start > f.end
   const report = useMemo(() => (!data || invalid ? null : buildHerdReport(rid, f, { ...data, lots, vaccinations, catName, lotName, unitName: (u) => unitLabel(u, arroba.outraLabel), today: t })),

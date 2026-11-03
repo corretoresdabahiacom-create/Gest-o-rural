@@ -6,24 +6,24 @@ export type HerdReportId =
   | 'atual' | 'categoria' | 'lote' | 'sexo' | 'evolucao' | 'data'
   | 'compras' | 'vendas' | 'mortes' | 'transferencias' | 'movimentos'
   | 'investido' | 'bruto' | 'despesas' | 'liquido' | 'custo'
-  | 'vac_lote' | 'vac_hist' | 'vac_pend' | 'reforcos'
+  | 'vac_lote' | 'vac_hist' | 'vac_pend' | 'reforcos' | 'estornos'
 
 export const HERD_REPORTS: { group: string; items: { id: HerdReportId; label: string }[] }[] = [
   { group: 'Quantidade', items: [{ id: 'atual', label: 'Rebanho atual' }, { id: 'categoria', label: 'Por categoria' }, { id: 'lote', label: 'Por lote' }, { id: 'sexo', label: 'Por sexo' }, { id: 'evolucao', label: 'Evolução do rebanho' }, { id: 'data', label: 'Inventário por data' }] },
-  { group: 'Movimentação', items: [{ id: 'compras', label: 'Compras' }, { id: 'vendas', label: 'Vendas' }, { id: 'mortes', label: 'Mortes' }, { id: 'transferencias', label: 'Transferências' }, { id: 'movimentos', label: 'Entradas e saídas' }] },
+  { group: 'Movimentação', items: [{ id: 'estornos', label: 'Estornos' }, { id: 'compras', label: 'Compras' }, { id: 'vendas', label: 'Vendas' }, { id: 'mortes', label: 'Mortes' }, { id: 'transferencias', label: 'Transferências' }, { id: 'movimentos', label: 'Entradas e saídas' }] },
   { group: 'Financeiro', items: [{ id: 'investido', label: 'Total investido em compras' }, { id: 'bruto', label: 'Total bruto de vendas' }, { id: 'despesas', label: 'Despesas de vendas' }, { id: 'liquido', label: 'Total líquido de vendas' }, { id: 'custo', label: 'Custo médio de aquisição' }] },
   { group: 'Sanitário', items: [{ id: 'vac_lote', label: 'Vacinação por lote' }, { id: 'vac_hist', label: 'Histórico de vacinação' }, { id: 'vac_pend', label: 'Vacinas pendentes' }, { id: 'reforcos', label: 'Próximos reforços' }] },
 ]
 
 export interface HerdFilters { start: string; end: string; lotId: string; categoryId: string; sex: Sex | ''; movType: string; seller: string; buyer: string }
 
-export interface Purchase { id: string; date: string; sellerName: string; buyerName: string; lotId: string; categoryId: string; sex: Sex; qty: number; totalKg: number; avgKg: number; unit: string; kgPerUnit: number; pricePerUnit: number; amount: number; costPerHead: number }
-export interface Sale { id: string; date: string; buyerName: string; lotId: string; categoryId: string; sex: Sex; qty: number; totalKg: number; avgKg: number; unit: string; gross: number; expenses: { type: string; amount: number }[]; expensesTotal: number; net: number }
-export interface Death { id: string; date: string; lotId: string; categoryId: string; sex: Sex; qty: number; cause: string; responsible?: string }
-export interface Transfer { id: string; date: string; lotId: string; toLotId: string; categoryId: string; sex: Sex; qty: number; reason: string; external?: boolean; direction?: string }
+export interface Purchase { id: string; reversedBy?: string; date: string; sellerName: string; buyerName: string; lotId: string; categoryId: string; sex: Sex; qty: number; totalKg: number; avgKg: number; unit: string; kgPerUnit: number; pricePerUnit: number; amount: number; costPerHead: number }
+export interface Sale { id: string; reversedBy?: string; date: string; buyerName: string; lotId: string; categoryId: string; sex: Sex; qty: number; totalKg: number; avgKg: number; unit: string; gross: number; expenses: { type: string; amount: number }[]; expensesTotal: number; net: number }
+export interface Death { id: string; reversedBy?: string; date: string; lotId: string; categoryId: string; sex: Sex; qty: number; cause: string; responsible?: string }
+export interface Transfer { id: string; reversedBy?: string; date: string; lotId: string; toLotId: string; categoryId: string; sex: Sex; qty: number; reason: string; external?: boolean; direction?: string }
 
 export interface HerdData {
-  lots: HerdLot[]; movs: HerdMovement[]; purchases: Purchase[]; sales: Sale[]; deaths: Death[]; transfers: Transfer[]; vaccinations: Vaccination[]
+  lots: HerdLot[]; movs: HerdMovement[]; reversals: { originalId: string; date: string; reason: string }[]; purchases: Purchase[]; sales: Sale[]; deaths: Death[]; transfers: Transfer[]; vaccinations: Vaccination[]
   catName: (id?: string) => string; lotName: (id?: string) => string; unitName: (u: string) => string; today: string
 }
 
@@ -89,7 +89,7 @@ export function buildHerdReport(id: HerdReportId, f: HerdFilters, d: HerdData): 
     case 'compras':
     case 'investido':
     case 'custo': {
-      const list = d.purchases.filter((p) => inRange(p.date, f) && okOp(p, f) && has(p.sellerName, f.seller) && has(p.buyerName, f.buyer)).sort((a, b) => a.date.localeCompare(b.date))
+      const list = d.purchases.filter((p) => !p.reversedBy && inRange(p.date, f) && okOp(p, f) && has(p.sellerName, f.seller) && has(p.buyerName, f.buyer)).sort((a, b) => a.date.localeCompare(b.date))
       const qty = list.reduce((s, p) => s + p.qty, 0), amount = list.reduce((s, p) => s + p.amount, 0), kg = list.reduce((s, p) => s + p.totalKg, 0)
       if (id === 'compras') return { title: 'Compras por período', subtitle: period, rows: list.map((p) => ({ data: p.date, vendedor: p.sellerName, comprador: p.buyerName, lote: d.lotName(p.lotId), cat: d.catName(p.categoryId), qtd: p.qty, kg: p.totalKg, unid: `${d.unitName(p.unit)} (${p.kgPerUnit} kg)`, preco: p.pricePerUnit, valor: p.amount, cab: p.costPerHead })),
         columns: [{ key: 'data', label: 'Data', type: 'date' }, { key: 'vendedor', label: 'Vendedor' }, { key: 'comprador', label: 'Comprador' }, { key: 'lote', label: 'Lote' }, { key: 'cat', label: 'Categoria' }, { key: 'qtd', label: 'Cab.', type: 'number' }, { key: 'kg', label: 'Peso total', type: 'kg' }, { key: 'unid', label: 'Unidade' }, { key: 'preco', label: 'Preço/unid.', type: 'money' }, { key: 'valor', label: 'Valor total', type: 'money' }, { key: 'cab', label: 'Custo/cab.', type: 'money' }],
@@ -109,7 +109,7 @@ export function buildHerdReport(id: HerdReportId, f: HerdFilters, d: HerdData): 
     case 'bruto':
     case 'liquido':
     case 'despesas': {
-      const list = d.sales.filter((s) => inRange(s.date, f) && okOp(s, f) && has(s.buyerName, f.buyer)).sort((a, b) => a.date.localeCompare(b.date))
+      const list = d.sales.filter((s) => !s.reversedBy && inRange(s.date, f) && okOp(s, f) && has(s.buyerName, f.buyer)).sort((a, b) => a.date.localeCompare(b.date))
       const tq = list.reduce((s, x) => s + x.qty, 0), tg = list.reduce((s, x) => s + x.gross, 0), te = list.reduce((s, x) => s + x.expensesTotal, 0), tn = list.reduce((s, x) => s + x.net, 0)
       if (id === 'vendas') return { title: 'Vendas por período', subtitle: period, rows: list.map((s) => ({ data: s.date, comprador: s.buyerName, lote: d.lotName(s.lotId), cat: d.catName(s.categoryId), qtd: s.qty, kg: s.totalKg, unid: d.unitName(s.unit), bruto: s.gross, desp: s.expensesTotal, liq: s.net })),
         columns: [{ key: 'data', label: 'Data', type: 'date' }, { key: 'comprador', label: 'Comprador' }, { key: 'lote', label: 'Lote' }, { key: 'cat', label: 'Categoria' }, { key: 'qtd', label: 'Cab.', type: 'number' }, { key: 'kg', label: 'Peso', type: 'kg' }, { key: 'unid', label: 'Unidade' }, { key: 'bruto', label: 'Bruto', type: 'money' }, { key: 'desp', label: 'Despesas', type: 'money' }, { key: 'liq', label: 'Líquido', type: 'money' }],
@@ -126,16 +126,27 @@ export function buildHerdReport(id: HerdReportId, f: HerdFilters, d: HerdData): 
         totals: { mes: 'TOTAL', qtd: tq, bruto: tg, desp: te, liq: tn } }
     }
     case 'mortes': {
-      const list = d.deaths.filter((x) => inRange(x.date, f) && okOp(x, f)).sort((a, b) => a.date.localeCompare(b.date))
+      const list = d.deaths.filter((x) => !x.reversedBy && inRange(x.date, f) && okOp(x, f)).sort((a, b) => a.date.localeCompare(b.date))
       return { title: 'Mortes por período', subtitle: period, rows: list.map((x) => ({ data: x.date, lote: d.lotName(x.lotId), cat: d.catName(x.categoryId), sexo: x.sex === 'M' ? 'Macho' : 'Fêmea', qtd: x.qty, causa: x.cause, resp: x.responsible ?? '' })),
         columns: [{ key: 'data', label: 'Data', type: 'date' }, { key: 'lote', label: 'Lote' }, { key: 'cat', label: 'Categoria' }, { key: 'sexo', label: 'Sexo' }, { key: 'qtd', label: 'Cab.', type: 'number' }, { key: 'causa', label: 'Causa provável' }, { key: 'resp', label: 'Responsável' }],
         totals: { data: 'TOTAL', qtd: list.reduce((s, x) => s + x.qty, 0) } }
     }
     case 'transferencias': {
-      const list = d.transfers.filter((x) => inRange(x.date, f) && (!f.lotId || x.lotId === f.lotId || x.toLotId === f.lotId) && (!f.categoryId || x.categoryId === f.categoryId) && (!f.sex || x.sex === f.sex)).sort((a, b) => a.date.localeCompare(b.date))
+      const list = d.transfers.filter((x) => !x.reversedBy && inRange(x.date, f) && (!f.lotId || x.lotId === f.lotId || x.toLotId === f.lotId) && (!f.categoryId || x.categoryId === f.categoryId) && (!f.sex || x.sex === f.sex)).sort((a, b) => a.date.localeCompare(b.date))
       return { title: 'Transferências por período', subtitle: period, rows: list.map((x) => ({ data: x.date, origem: x.direction === 'entrada' ? 'Outra fazenda' : d.lotName(x.lotId), destino: x.external && x.direction !== 'entrada' ? 'Outra fazenda' : d.lotName(x.toLotId), cat: d.catName(x.categoryId), qtd: x.qty, tipo: x.external ? 'Entre fazendas' : 'Interna', motivo: x.reason })),
         columns: [{ key: 'data', label: 'Data', type: 'date' }, { key: 'origem', label: 'Origem' }, { key: 'destino', label: 'Destino' }, { key: 'cat', label: 'Categoria' }, { key: 'qtd', label: 'Cab.', type: 'number' }, { key: 'tipo', label: 'Tipo' }, { key: 'motivo', label: 'Motivo' }],
         totals: { data: 'TOTAL', qtd: list.reduce((s, x) => s + x.qty, 0) } }
+    }
+    case 'estornos': {
+      const all = [...d.purchases.map((x) => ({ x, t: 'Compra', q: x.qty, v: x.amount as number | null })), ...d.sales.map((x) => ({ x, t: 'Venda', q: x.qty, v: x.net as number | null })),
+        ...d.deaths.map((x) => ({ x, t: 'Morte', q: x.qty, v: null })), ...d.transfers.filter((x) => x.direction !== 'entrada').map((x) => ({ x, t: 'Transferência', q: x.qty, v: null }))]
+      const revs = new Map(d.reversals.map((r) => [r.originalId, r]))
+      const rows = all.filter(({ x }) => x.reversedBy && okOp(x, f)).map(({ x, t, q, v }) => ({ x, t, q, v, r: revs.get(x.id) }))
+        .filter(({ r }) => r && inRange(r.date, f)).sort((a, b) => a.r!.date.localeCompare(b.r!.date))
+        .map(({ x, t, q, v, r }) => ({ data: r!.date, tipo: t, orig: x.date, lote: d.lotName(x.lotId), qtd: q, valor: v, motivo: r!.reason }))
+      return { title: 'Estornos de operações', subtitle: period, rows,
+        columns: [{ key: 'data', label: 'Data do estorno', type: 'date' }, { key: 'tipo', label: 'Operação' }, { key: 'orig', label: 'Data original', type: 'date' }, { key: 'lote', label: 'Lote' }, { key: 'qtd', label: 'Cab.', type: 'number' }, { key: 'valor', label: 'Valor', type: 'money' }, { key: 'motivo', label: 'Motivo' }],
+        totals: { data: `TOTAL (${rows.length})`, qtd: rows.reduce((s, r) => s + r.qtd, 0) } }
     }
     case 'movimentos': {
       const list = d.movs.filter((m) => inRange(m.date, f) && (!f.lotId || m.lotId === f.lotId) && (!f.movType || m.type === f.movType) && m.keys.some((k) => okKey(k, f)))

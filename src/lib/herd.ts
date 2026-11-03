@@ -9,11 +9,11 @@ export const LOT_SEX_LABEL: Record<LotSex, string> = { M: 'Machos', F: 'Fêmeas'
 
 export type MovementType =
   | 'inicial' | 'compra' | 'nascimento' | 'venda' | 'morte'
-  | 'transf_saida' | 'transf_entrada' | 'ajuste' | 'troca_categoria'
+  | 'transf_saida' | 'transf_entrada' | 'ajuste' | 'troca_categoria' | 'estorno'
 export const MOVEMENT_LABEL: Record<MovementType, string> = {
   inicial: 'Saldo inicial', compra: 'Compra', nascimento: 'Nascimento', venda: 'Venda', morte: 'Morte',
   transf_saida: 'Transferência (saída)', transf_entrada: 'Transferência (entrada)', ajuste: 'Ajuste de inventário',
-  troca_categoria: 'Mudança de categoria',
+  troca_categoria: 'Mudança de categoria', estorno: 'Estorno',
 }
 
 /** Chave do saldo dentro do lote: categoria + sexo. */
@@ -39,7 +39,7 @@ export interface HerdLot {
   avgWeightAt?: string | null
 }
 
-export type AnimalStatus = 'ativo' | 'vendido' | 'morto' | 'transferido'
+export type AnimalStatus = 'ativo' | 'vendido' | 'morto' | 'transferido' | 'estornado'
 export interface Animal {
   id: string
   tag: string
@@ -203,4 +203,14 @@ export function vaccineAlerts(list: Vaccination[], today: string, windowDays = 3
     else if (v.boosterDate && !v.boosterDoneById) out.push({ v, kind: 'reforco', due: v.boosterDate, daysLeft: daysBetween(today, v.boosterDate) })
   }
   return out.filter((a) => a.daysLeft <= windowDays).sort((a, b) => a.daysLeft - b.daysLeft)
+}
+
+/* ---------- Estorno ---------- */
+export type ReversibleCol = 'purchases' | 'births' | 'sales' | 'mortalityRecords' | 'herdTransfers' | 'categoryChanges'
+export const REVERSIBLE_LABEL: Record<ReversibleCol, string> = {
+  purchases: 'compra', births: 'nascimento', sales: 'venda', mortalityRecords: 'morte', herdTransfers: 'transferência', categoryChanges: 'mudança de categoria',
+}
+/** Movimentação inversa: mesmas chaves, quantidades com sinal trocado (o total líquido volta a zero). */
+export function inverseMovement(m: Pick<HerdMovement, 'key1' | 'qty1' | 'key2' | 'qty2'>) {
+  return { key1: m.key1, qty1: -m.qty1, key2: m.key2, qty2: m.key2 ? -(m.qty2 ?? 0) : undefined }
 }

@@ -155,6 +155,20 @@ service cloud.firestore {
         allow delete: if canEdit(farmId);
       }
 
+      // Receitas (vendas de animais e outras entradas). Id determinístico evita duplicidade.
+      match /revenueEntries/{id} {
+        function validRevenue() {
+          return d().keys().hasOnly(['date', 'amount', 'source', 'description', 'saleId', 'note', 'createdBy', 'createdAt', 'updatedAt'])
+            && isDate(d().date) && money(d().amount) && d().amount > 0
+            && d().source in ['venda_animais', 'outra']
+            && str(d().description, 1, 300) && optStr(d(), 'note', 300) && optStr(d(), 'saleId', 64);
+        }
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId) && validRevenue() && d().createdBy == request.auth.uid;
+        allow update: if canEdit(farmId) && validRevenue() && unchanged('createdBy') && unchanged('source');
+        allow delete: if canEdit(farmId);
+      }
+
       // ======================= REBANHO =======================
       match /animalCategories/{id} {
         allow read: if isMember(farmId);
@@ -172,7 +186,7 @@ service cloud.firestore {
           && d().keys().hasOnly(['type', 'date', 'lotId', 'keys', 'key1', 'qty1', 'key2', 'qty2', 'total', 'animalIds', 'refType', 'refId',
                                  'transferId', 'otherLotId', 'otherFarmId', 'note', 'createdBy', 'createdAt'])
           && d().createdBy == request.auth.uid
-          && d().type in ['inicial', 'compra', 'nascimento', 'venda', 'morte', 'transf_saida', 'transf_entrada', 'ajuste', 'troca_categoria']
+          && d().type in ['inicial', 'compra', 'nascimento', 'venda', 'morte', 'transf_saida', 'transf_entrada', 'ajuste', 'troca_categoria', 'estorno']
           && isDate(d().date) && str(d().lotId, 1, 64)
           && str(d().key1, 3, 140) && d().qty1 is int && d().qty1 != 0
           && d().total is int
@@ -219,10 +233,10 @@ service cloud.firestore {
         function validAnimal() {
           return d().keys().hasOnly(['tag', 'name', 'sex', 'categoryId', 'breed', 'birthDate', 'weightKg', 'lotId', 'entryDate', 'origin',
                                      'sellerName', 'buyerName', 'acquisitionCost', 'notes', 'status', 'lastWeighing', 'purchaseId', 'exitRef',
-                                     'transferRef', 'createdBy', 'createdAt', 'updatedAt'])
+                                     'transferRef', 'reversalRef', 'createdBy', 'createdAt', 'updatedAt'])
             && str(d().tag, 1, 40) && d().sex in ['M', 'F'] && str(d().categoryId, 1, 64) && str(d().lotId, 1, 64)
             && isDate(d().entryDate) && d().origin in ['nascimento', 'compra', 'transferencia', 'existente']
-            && d().status in ['ativo', 'vendido', 'morto', 'transferido']
+            && d().status in ['ativo', 'vendido', 'morto', 'transferido', 'estornado']
             && optDate(d(), 'birthDate') && optMoney(d(), 'acquisitionCost') && optStr(d(), 'notes', 1000)
             && (!('weightKg' in d()) || d().weightKg == null || (d().weightKg is number && d().weightKg > 0 && d().weightKg < 3000));
         }
@@ -230,23 +244,31 @@ service cloud.firestore {
         allow create: if canEdit(farmId) && validAnimal() && d().status == 'ativo';
         // Animal que saiu (vendido/morto/transferido) não volta a ficar ativo por edição.
         allow update: if canEdit(farmId) && validAnimal()
-          && (resource.data.status == 'ativo' || d().status == resource.data.status);
+          && (resource.data.status == 'ativo' || d().status == resource.data.status
+              // Estorno de venda/morte/transferência devolve o animal ao rebanho, vinculado ao registro de estorno.
+              || (d().status == 'ativo' && ('reversalRef' in d()) && d().reversalRef != resource.data.get('reversalRef', '')
+                  && existsAfter(/databases/$(database)/documents/farms/$(farmId)/reversals/$(d().reversalRef))));
         allow delete: if false;
       }
 
       // Registros de operações: somente inserção (correções geram novas operações/ajustes).
       match /{opCol}/{opId} {
         allow read: if isMember(farmId) && opCol in ['purchases', 'sales', 'births', 'mortalityRecords', 'herdTransfers', 'categoryChanges',
-                                                     'inventoryAdjustments', 'herdInventories', 'vaccinations', 'weighingSessions', 'weighings'];
+                                                     'inventoryAdjustments', 'herdInventories', 'vaccinations', 'weighingSessions', 'weighings', 'reversals'];
         allow create: if canEdit(farmId)
           && opCol in ['purchases', 'sales', 'births', 'mortalityRecords', 'herdTransfers', 'categoryChanges', 'inventoryAdjustments',
-                       'herdInventories', 'vaccinations', 'weighingSessions', 'weighings']
+                       'herdInventories', 'vaccinations', 'weighingSessions', 'weighings', 'reversals']
           && d().createdBy == request.auth.uid && d().size() <= 60;
         // Exceções controladas: status da conferência física, baixa de reforço vacinal e marcação de correção de pesagem.
         allow update: if canEdit(farmId) && (
           (opCol == 'herdInventories' && d().diff(resource.data).affectedKeys().hasOnly(['status', 'confirmedAt']))
           || (opCol == 'vaccinations' && d().diff(resource.data).affectedKeys().hasOnly(['boosterDoneById', 'updatedAt']))
           || (opCol == 'weighings' && d().diff(resource.data).affectedKeys().hasOnly(['supersededBy', 'updatedAt']))
+          // Estorno: marca a operação original (uma única vez) e exige o registro de estorno no mesmo envio.
+          || (opCol in ['purchases', 'sales', 'births', 'mortalityRecords', 'herdTransfers', 'categoryChanges']
+              && !('reversedBy' in resource.data)
+              && d().diff(resource.data).affectedKeys().hasOnly(['reversedBy', 'reversedAt', 'revenueEntryId'])
+              && (!('reversedBy' in d()) || existsAfter(/databases/$(database)/documents/farms/$(farmId)/reversals/$(d().reversedBy))))
         );
         allow delete: if false;
       }

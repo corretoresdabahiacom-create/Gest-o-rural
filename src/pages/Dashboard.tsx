@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, BellRing, CalendarClock, Plus, Receipt, Users, Wallet, Wrench } from 'lucide-react'
+import { AlertTriangle, BellRing, CalendarClock, Plus, Receipt, Scale, TrendingUp, Users, Wallet, Wrench } from 'lucide-react'
 import { useApp } from '../contexts/AppContext'
-import { useEntries } from '../lib/db'
+import { useEntries, useRevenues } from '../lib/db'
 import { fmtDate, money, monthLabel, monthsBetween, shiftMonth, today } from '../lib/format'
 import { alertMilestone, entryCategory, groupTotals, obligationAlerts, obligationName, sum } from '../lib/domain'
 import { Badge, Button, Card, Empty, ErrorBox, PageHeader, Spinner, Stat } from '../components/ui'
@@ -18,6 +18,8 @@ export default function Dashboard() {
   const queryStart = (evoStartMonth + '-01') < period.start ? evoStartMonth + '-01' : period.start
   const { data: all, loading, error } = useEntries(farm!.id, queryStart, period.end)
 
+  const rev = useRevenues(farm!.id, period.start, period.end)
+  const revenue = sum(rev.data)
   const inPeriod = useMemo(() => all.filter((e) => e.date >= period.start && e.date <= period.end), [all, period])
   const labor = sum(inPeriod.filter((e) => e.kind === 'labor'))
   const other = sum(inPeriod.filter((e) => e.kind === 'other'))
@@ -38,12 +40,14 @@ export default function Dashboard() {
       <div className="mb-5"><PeriodPicker value={period} onChange={setPeriod} /></div>
       {error && <div className="mb-4"><ErrorBox>{error}</ErrorBox></div>}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Stat label="Total de despesas" value={loading ? '…' : money(labor + other)} icon={<Wallet className="size-4" />} />
         <Stat label="Pago a colaboradores" value={loading ? '…' : money(labor)} icon={<Users className="size-4" />} />
         <Stat label="Outras despesas" value={loading ? '…' : money(other)} icon={<Wrench className="size-4" />} tone="earth" />
         <Stat label="Colaboradores ativos" value={String(collaborators.filter((c) => c.active).length)} icon={<Users className="size-4" />} tone="stone"
           sub={`${collaborators.length} cadastrados`} />
+        <Stat label="Receitas" value={rev.loading ? '…' : money(revenue)} icon={<TrendingUp className="size-4" />} sub="Vendas de animais e outras" />
+        <Stat label="Resultado (receitas − despesas)" value={loading || rev.loading ? '…' : money(revenue - labor - other)} icon={<Scale className="size-4" />} tone={revenue - labor - other >= 0 ? 'brand' : 'earth'} />
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-3">

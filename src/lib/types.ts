@@ -82,3 +82,13 @@ export const DEFAULT_CATEGORIES = [
   'Serviços terceirizados', 'Outros',
 ]
 export const DEFAULT_ALERT_DAYS = [30, 15, 7, 0]
+
+export interface RevenueEntry {
+  id: string
+  date: string
+  amount: number
+  source: 'venda_animais' | 'outra'
+  description: string
+  saleId?: string
+  note?: string
+}

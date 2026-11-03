@@ -1,8 +1,8 @@
 import { fmtDate, monthLabel, monthsBetween } from './format'
 import { entryCategory, groupTotals, obligationName, obligationState, sum } from './domain'
-import type { ExpenseEntry, Obligation, ObligationType } from './types'
+import type { ExpenseEntry, Obligation, ObligationType, RevenueEntry } from './types'
 
-export type ReportId = 'geral' | 'colaborador' | 'tipo' | 'categoria' | 'ferias' | 'decimo' | 'pendentes' | 'pagas' | 'mensal' | 'comparativo'
+export type ReportId = 'receitas' | 'geral' | 'colaborador' | 'tipo' | 'categoria' | 'ferias' | 'decimo' | 'pendentes' | 'pagas' | 'mensal' | 'comparativo'
 export const REPORTS: { id: ReportId; label: string }[] = [
   { id: 'geral', label: 'Despesas gerais por período' },
   { id: 'colaborador', label: 'Pagamentos por colaborador' },
@@ -13,6 +13,7 @@ export const REPORTS: { id: ReportId; label: string }[] = [
   { id: 'pendentes', label: 'Obrigações pendentes' },
   { id: 'pagas', label: 'Obrigações pagas' },
   { id: 'mensal', label: 'Resumo financeiro mensal' },
+  { id: 'receitas', label: 'Receitas por período' },
   { id: 'comparativo', label: 'Comparativo entre períodos' },
 ]
 
@@ -54,7 +55,7 @@ function filterObligations(list: Obligation[], f: Filters, types: ObligationType
 }
 
 export function buildReport(id: ReportId, f: Filters, entries: ExpenseEntry[], obligations: Obligation[], today: string,
-  laborTypeOf: (collaboratorId: string) => string | undefined, compareEntries: ExpenseEntry[] = []): ReportResult {
+  laborTypeOf: (collaboratorId: string) => string | undefined, compareEntries: ExpenseEntry[] = [], revenues: RevenueEntry[] = []): ReportResult {
   const subtitle = `Período: ${fmtDate(f.start)} a ${fmtDate(f.end)}`
   const list = filterEntries(entries, f)
   const oblCols: Column[] = [
@@ -115,15 +116,24 @@ export function buildReport(id: ReportId, f: Filters, entries: ExpenseEntry[], o
       return { title: 'Obrigações pagas', subtitle: `${subtitle} (data de pagamento)`, columns: oblCols, rows, totals: oblTotals(rows) }
     }
     case 'mensal': {
+      // Receitas não têm colaborador/categoria: com esses filtros, ficam fora do resumo.
+      const rev = f.collaboratorId || f.laborTypeId || f.expenseType ? [] : revenues.filter((r) => r.date >= f.start && r.date <= f.end)
       const rows = monthsBetween(f.start, f.end).map((ym) => {
         const m = list.filter((e) => e.date.startsWith(ym))
-        const l = sum(m.filter((e) => e.kind === 'labor')), o = sum(m.filter((e) => e.kind === 'other'))
-        return { mes: monthLabel(ym), labor: l, other: o, total: l + o, qtd: m.length }
+        const l = sum(m.filter((e) => e.kind === 'labor')), o = sum(m.filter((e) => e.kind === 'other')), r = sum(rev.filter((x) => x.date.startsWith(ym)))
+        return { mes: monthLabel(ym), labor: l, other: o, total: l + o, receitas: r, resultado: r - l - o }
       })
-      const l = sum(list.filter((e) => e.kind === 'labor')), o = sum(list.filter((e) => e.kind === 'other'))
+      const l = sum(list.filter((e) => e.kind === 'labor')), o = sum(list.filter((e) => e.kind === 'other')), r = sum(rev)
       return { title: 'Resumo financeiro mensal', subtitle, rows,
-        columns: [{ key: 'mes', label: 'Mês' }, { key: 'qtd', label: 'Lançamentos', type: 'number' }, { key: 'labor', label: 'Mão de obra', type: 'money' }, { key: 'other', label: 'Outras despesas', type: 'money' }, { key: 'total', label: 'Total', type: 'money' }],
-        totals: { mes: 'TOTAL', qtd: list.length, labor: l, other: o, total: l + o } }
+        columns: [{ key: 'mes', label: 'Mês' }, { key: 'labor', label: 'Mão de obra', type: 'money' }, { key: 'other', label: 'Outras despesas', type: 'money' }, { key: 'total', label: 'Total despesas', type: 'money' }, { key: 'receitas', label: 'Receitas', type: 'money' }, { key: 'resultado', label: 'Resultado', type: 'money' }],
+        totals: { mes: 'TOTAL', labor: l, other: o, total: l + o, receitas: r, resultado: r - l - o } }
+    }
+    case 'receitas': {
+      const rev = revenues.filter((r) => r.date >= f.start && r.date <= f.end).sort((a, b) => a.date.localeCompare(b.date))
+      const rows = rev.map((r) => ({ data: r.date, origem: r.source === 'venda_animais' ? 'Venda de animais' : 'Outra', descricao: r.description, valor: r.amount }))
+      return { title: 'Receitas por período', subtitle, rows,
+        columns: [{ key: 'data', label: 'Data', type: 'date' }, { key: 'origem', label: 'Origem' }, { key: 'descricao', label: 'Descrição' }, { key: 'valor', label: 'Valor', type: 'money' }],
+        totals: { data: `TOTAL (${rows.length})`, valor: sum(rev) } }
     }
     case 'comparativo': {
       const fb = { ...f, start: f.compareStart ?? '', end: f.compareEnd ?? '' }

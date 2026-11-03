@@ -5,7 +5,7 @@ import {
 import { useEffect, useState } from 'react'
 import { auth, db } from './firebase'
 import type { ValidatedSheet } from './sheet'
-import type { ExpenseEntry } from './types'
+import type { ExpenseEntry, RevenueEntry } from './types'
 
 export const farmCol = (farmId: string, name: string) => collection(db, 'farms', farmId, name)
 export const farmDoc = (farmId: string, name: string, id: string) => doc(db, 'farms', farmId, name, id)
@@ -113,4 +113,17 @@ export function friendlyError(e: unknown): string {
   if (code === 'auth/invalid-email') return 'E-mail inválido.'
   if (code === 'auth/too-many-requests') return 'Muitas tentativas. Aguarde alguns minutos.'
   return (e as Error)?.message || 'Erro inesperado.'
+}
+
+/** Receitas num intervalo de datas, em tempo real. */
+export function useRevenues(farmId: string | null, start: string, end: string) {
+  const [state, setState] = useState<{ data: RevenueEntry[]; loading: boolean; error: string | null }>({ data: [], loading: true, error: null })
+  useEffect(() => {
+    if (!farmId || !start || !end) return
+    setState((s) => ({ ...s, loading: true }))
+    const q = query(farmCol(farmId, 'revenueEntries'), where('date', '>=', start), where('date', '<=', end), orderBy('date', 'desc'))
+    return onSnapshot(q, (snap) => setState({ data: snap.docs.map((d) => ({ id: d.id, ...d.data() }) as RevenueEntry), loading: false, error: null }),
+      (e) => setState({ data: [], loading: false, error: e.message }))
+  }, [farmId, start, end])
+  return state
 }

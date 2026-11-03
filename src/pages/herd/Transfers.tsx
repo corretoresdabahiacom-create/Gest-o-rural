@@ -10,8 +10,9 @@ import { Badge, Button, Card, ErrorBox, Field, PageHeader, useToast } from '../.
 import { LotKeyPicker, emptyExit, readExit } from '../../components/herd/LotKeyPicker'
 import { herdErr } from '../../components/herd/HerdForms'
 import { OpTable, useOps } from '../../components/herd/OpList'
+import { ReverseButton } from '../../components/herd/ReverseButton'
 
-interface TRec { date: string; lotId: string; toLotId: string; qty: number; reason: string; external?: boolean; direction?: string; fromFarmId?: string; toFarmId?: string | null }
+interface TRec { id: string; reversedBy?: string; date: string; lotId: string; toLotId: string; qty: number; reason: string; external?: boolean; direction?: string; fromFarmId?: string; toFarmId?: string | null }
 const dec = (s: string) => { const n = Number(s.replace(',', '.')); return s.trim() && Number.isFinite(n) ? n : null }
 
 export default function Transfers() {
@@ -72,10 +73,10 @@ export default function Transfers() {
           <div className="flex justify-end border-t border-stone-200 p-3 dark:border-stone-800"><Button loading={saving} onClick={save}>Registrar transferência</Button></div>
         </Card>
       )}
-      <OpTable title="Transferências registradas" rows={recs} head={['Data', 'Origem', 'Destino', 'Cab.', 'Motivo', 'Tipo']}
-        render={(t) => <tr key={(t as TRec & { id: string }).id}><td className="td tabular">{fmtDate(t.date)}</td>
+      <OpTable title="Transferências registradas" rows={recs} head={['Data', 'Origem', 'Destino', 'Cab.', 'Motivo', 'Tipo', '']}
+        render={(t) => <tr key={t.id}><td className="td tabular">{fmtDate(t.date)}</td>
           <td className="td">{t.direction === 'entrada' ? `Outra fazenda` : lotName(t.lotId)}</td><td className="td">{t.external && t.direction !== 'entrada' ? 'Outra fazenda' : lotName(t.toLotId)}</td>
-          <td className="td tabular">{t.qty}</td><td className="td">{t.reason}</td><td className="td">{t.external ? <Badge tone="blue">{t.direction === 'entrada' ? 'Recebida' : 'Entre fazendas'}</Badge> : <Badge>Interna</Badge>}</td></tr>} />
+          <td className="td tabular">{t.qty}</td><td className="td">{t.reason}</td><td className="td">{t.external ? <Badge tone="blue">{t.direction === 'entrada' ? 'Recebida' : 'Entre fazendas'}</Badge> : <Badge>Interna</Badge>}</td><td className="td text-right"><ReverseButton col="herdTransfers" op={t} summary={`Transferência de ${t.qty} cab. em ${fmtDate(t.date)}`} /></td></tr>} />
     </>
   )
 }

@@ -119,3 +119,22 @@ A pesagem coletiva **nunca** cria registros individuais.
 - **Gravação:** tudo vai num único lote atômico, com no máximo 240 linhas por sessão por causa do limite de 500 operações. O id gerado ao abrir a planilha evita duplicidade. Além dos registros, só são atualizados `animals.lastWeighing` e o peso médio de referência do lote. **Nunca** a quantidade do lote, vendas ou o financeiro.
 - **Correções:** uma correção cria um novo registro com `correctsId` e o motivo, e marca o original com `supersededBy`. O original nunca é editado nem apagado, e os relatórios usam apenas os registros vigentes.
 - **Importação (.xlsx via exceljs ou CSV):** o assistente segue as etapas de mapear colunas, validar data, lote, animal pertencente ao lote e peso, detectar duplicidades (no arquivo e com o histórico) e mostrar uma prévia. Só as linhas válidas são gravadas, em sessões marcadas como `importacao`.
+
+# Estorno de operações do rebanho
+Compras, nascimentos, vendas, mortes, transferências (internas e entre fazendas) e mudanças de categoria podem ser estornadas, informando data e motivo. **Nada é apagado.** Numa única transação, o estorno faz o seguinte:
+- grava movimentações inversas do tipo `estorno` em cada lote afetado, com as mesmas chaves e sinal trocado, revalidando os saldos. Por exemplo, não é possível estornar uma compra cujos animais já saíram;
+- cria `reversals/rev-{operação}`, com id determinístico, então cada operação só pode ser estornada uma vez;
+- marca a operação original com `reversedBy`. As regras só aceitam essa marcação se o registro de estorno existir no mesmo envio e se a operação ainda não tiver sido estornada;
+- desfaz o efeito sobre os animais:
+  - compra: os animais da compra passam a "estornado";
+  - venda, morte ou transferência entre fazendas: os animais voltam a ativos. As regras só permitem reativar um animal com um `reversalRef` existente;
+  - transferência interna: os animais voltam ao lote de origem;
+  - mudança de categoria: os animais voltam à categoria original;
+- remove o lançamento financeiro vinculado: a despesa da compra ou a receita da venda.
+
+Relatórios de operações e indicadores do painel ignoram operações estornadas. Os saldos e o inventário por data usam o livro-razão completo: antes da data do estorno, o saldo histórico continua mostrando a situação original. Há também um relatório dedicado aos estornos.
+
+# Receitas no financeiro
+A coleção `revenueEntries` registra as receitas, com origem `venda_animais` ou `outra`. A venda de animais pode lançar o valor **líquido** como receita, com id determinístico `herd-sale-{venda}`, ou seja, uma única vez. Vendas antigas ganham o botão "Lançar receita". Receitas de venda só são corrigidas estornando a venda. As receitas manuais podem ser editadas e excluídas, com log.
+
+O painel principal mostra as receitas e o resultado (receitas − despesas) do período. O "Resumo financeiro mensal" ganhou as colunas Receitas e Resultado, e foi criado o relatório "Receitas por período". As despesas continuam em `expenseEntries`, sem mudanças, e por isso os totais de despesa não foram afetados.

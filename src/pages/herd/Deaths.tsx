@@ -8,8 +8,9 @@ import { Button, Card, ErrorBox, Field, PageHeader, useToast } from '../../compo
 import { LotKeyPicker, emptyExit, readExit } from '../../components/herd/LotKeyPicker'
 import { herdErr } from '../../components/herd/HerdForms'
 import { OpTable, useOps } from '../../components/herd/OpList'
+import { ReverseButton } from '../../components/herd/ReverseButton'
 
-interface DeathRec { date: string; lotId: string; categoryId: string; sex: 'M' | 'F'; qty: number; cause: string; responsible: string; animalIds: string[] }
+interface DeathRec { id: string; reversedBy?: string; date: string; lotId: string; categoryId: string; sex: 'M' | 'F'; qty: number; cause: string; responsible: string; animalIds: string[] }
 
 export default function Deaths() {
   const { farm, canEdit } = useApp()
@@ -51,9 +52,9 @@ export default function Deaths() {
           <div className="flex justify-end border-t border-stone-200 p-3 dark:border-stone-800"><Button variant="danger" loading={saving} onClick={save}>Registrar morte</Button></div>
         </Card>
       )}
-      <OpTable title="Mortes registradas" rows={recs} head={['Data', 'Lote', 'Categoria', 'Cab.', 'Animais', 'Causa', 'Responsável']}
-        render={(d) => <tr key={(d as DeathRec & { id: string }).id}><td className="td tabular">{fmtDate(d.date)}</td><td className="td">{lotName(d.lotId)}</td><td className="td">{catName(d.categoryId)}</td><td className="td tabular">{d.qty}</td>
-          <td className="td text-xs">{(d.animalIds ?? []).map((id) => animals.find((a) => a.id === id)?.tag ?? '').filter(Boolean).join(', ') || '—'}</td><td className="td">{d.cause}</td><td className="td">{d.responsible || '—'}</td></tr>} />
+      <OpTable title="Mortes registradas" rows={recs} head={['Data', 'Lote', 'Categoria', 'Cab.', 'Animais', 'Causa', 'Responsável', '']}
+        render={(d) => <tr key={d.id} className={d.reversedBy ? 'text-stone-400 line-through decoration-stone-300' : ''}><td className="td tabular">{fmtDate(d.date)}</td><td className="td">{lotName(d.lotId)}</td><td className="td">{catName(d.categoryId)}</td><td className="td tabular">{d.qty}</td>
+          <td className="td text-xs">{(d.animalIds ?? []).map((id) => animals.find((a) => a.id === id)?.tag ?? '').filter(Boolean).join(', ') || '—'}</td><td className="td">{d.cause}</td><td className="td">{d.responsible || '—'}</td><td className="td text-right no-underline"><ReverseButton col="mortalityRecords" op={d} summary={`Morte de ${d.qty} cab. em ${lotName(d.lotId)} (${fmtDate(d.date)})`} /></td></tr>} />
     </>
   )
 }

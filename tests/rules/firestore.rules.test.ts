@@ -170,3 +170,39 @@ describe('pesagem: histórico preservado', () => {
     await assertFails(setDoc(doc(db, `farms/${F}/weighings/w1`), { sessionId: 's1', date: '2026-11-03', mode: 'individual', lotId: 'L1', qty: 1, totalKg: 1, avgKg: 1, createdBy: 'adm' }))
   })
 })
+
+describe('estorno e receitas', () => {
+  const seed = () => env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await setDoc(doc(db, `farms/${F}/herdLots/L1`), { name: 'Bois', sex: 'M', active: true, count: 70, balances: { 'bois|M': 70 }, lastMovementId: 's1-L1' })
+    await setDoc(doc(db, `farms/${F}/sales/s1`), { date: '2026-11-01', qty: 30, net: 1000, createdBy: 'adm' })
+    await setDoc(doc(db, `farms/${F}/animals/a1`), { tag: 'B01', sex: 'M', categoryId: 'bois', lotId: 'L1', entryDate: '2026-01-01', origin: 'compra', status: 'vendido', exitRef: 's1' })
+  })
+  const reverse = (withReversal = true, markTwice = false) => {
+    const db = as('adm'); const b = writeBatch(db)
+    b.set(doc(db, `farms/${F}/herdMovements/rev-s1-L1`), { type: 'estorno', date: '2026-11-03', lotId: 'L1', keys: ['bois|M'], key1: 'bois|M', qty1: 30, total: 30, refId: 'rev-s1', refType: 'estorno', createdBy: 'adm', createdAt: serverTimestamp() })
+    b.update(doc(db, `farms/${F}/herdLots/L1`), { count: 100, balances: { 'bois|M': 100 }, lastMovementId: 'rev-s1-L1' })
+    if (withReversal) b.set(doc(db, `farms/${F}/reversals/rev-s1`), { originalCol: 'sales', originalId: 's1', reason: 'teste', date: '2026-11-03', createdBy: 'adm' })
+    b.update(doc(db, `farms/${F}/sales/s1`), { reversedBy: 'rev-s1' })
+    b.update(doc(db, `farms/${F}/animals/a1`), { status: 'ativo', reversalRef: 'rev-s1' })
+    if (markTwice) b.update(doc(db, `farms/${F}/sales/s1`), { reversedBy: 'rev-s1b' })
+    return b.commit()
+  }
+  it('estorno completo é aceito', async () => { await seed(); await assertSucceeds(reverse()) })
+  it('marcar estorno sem o registro de estorno é recusado', async () => { await seed(); await assertFails(reverse(false)) })
+  it('operação não pode ser estornada duas vezes', async () => {
+    await seed(); await assertSucceeds(reverse())
+    await assertFails(updateDoc(doc(as('adm'), `farms/${F}/sales/s1`), { reversedBy: 'outro' }))
+  })
+  it('animal vendido não volta a ativo sem estorno', async () => {
+    await seed()
+    await assertFails(updateDoc(doc(as('adm'), `farms/${F}/animals/a1`), { status: 'ativo' }))
+  })
+  it('receita válida aceita; inválida, de leitor ou de outra fazenda recusada', async () => {
+    const r = { date: '2026-11-03', amount: 13045000, source: 'venda_animais', description: 'Venda de 30 cab.', saleId: 's1', createdBy: 'adm', createdAt: serverTimestamp() }
+    await assertSucceeds(setDoc(doc(as('adm'), `farms/${F}/revenueEntries/herd-sale-s1`), r))
+    await assertFails(setDoc(doc(as('adm'), `farms/${F}/revenueEntries/x`), { ...r, amount: 10.5 }))
+    await assertFails(setDoc(doc(as('leitor'), `farms/${F}/revenueEntries/y`), { ...r, createdBy: 'leitor' }))
+    await assertFails(getDoc(doc(as('intruso'), `farms/${F}/revenueEntries/herd-sale-s1`)))
+  })
+})

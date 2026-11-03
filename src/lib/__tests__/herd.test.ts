@@ -76,7 +76,7 @@ describe('cenários do rebanho', () => {
   })
   it('relatórios de quantidade, movimentação e financeiro', () => {
     const f: HerdFilters = { start: '2026-01-01', end: '2026-12-31', lotId: '', categoryId: '', sex: '', movType: '', seller: '', buyer: '' }
-    const d: HerdData = { lots: [A, B], movs, today: '2026-11-03', catName: (c) => c ?? '', lotName: (l) => l ?? '', unitName: (u) => u, vaccinations: [], deaths: [], transfers: [],
+    const d: HerdData = { lots: [A, B], movs, reversals: [], today: '2026-11-03', catName: (c) => c ?? '', lotName: (l) => l ?? '', unitName: (u) => u, vaccinations: [], deaths: [], transfers: [],
       purchases: [{ id: 'p', date: '2026-08-01', sellerName: 'Zé', buyerName: 'Ana', lotId: 'A', categoryId: 'bois', sex: 'M', qty: 100, totalKg: 36000, avgKg: 360, unit: 'vivo', kgPerUnit: 30, pricePerUnit: 31000, amount: 37200000, costPerHead: 372000 }],
       sales: [{ id: 's', date: '2026-09-10', buyerName: 'Frigorífico', lotId: 'A', categoryId: 'bois', sex: 'M', qty: 30, totalKg: 13500, avgKg: 450, unit: 'vivo', gross: 13500000, expenses: [{ type: 'Frete', amount: 300000 }, { type: 'Comissão', amount: 155000 }], expensesTotal: 455000, net: 13045000 }] }
     expect(buildHerdReport('atual', f, d).totals).toMatchObject({ t: 68 })

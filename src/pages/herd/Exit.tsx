@@ -3,26 +3,27 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useApp } from '../../contexts/AppContext'
 import { useHerd } from '../../contexts/HerdContext'
 import { newId } from '../../lib/db'
-import { saveSale } from '../../lib/herdDb'
+import { postSaleRevenue, saveSale } from '../../lib/herdDb'
 import { fmtDate, money, number, parseMoney, today } from '../../lib/format'
 import { saleNet, tradeCalc, type ArrobaUnit } from '../../lib/herd'
-import { Button, Card, ErrorBox, Field, Modal, PageHeader, useToast } from '../../components/ui'
+import { Badge, Button, Card, ErrorBox, Field, Modal, PageHeader, useToast } from '../../components/ui'
 import { LotKeyPicker, emptyExit, readExit } from '../../components/herd/LotKeyPicker'
 import { UnitFields, unitLabel } from '../../components/herd/UnitFields'
 import { herdErr } from '../../components/herd/HerdForms'
 import { OpTable, useOps } from '../../components/herd/OpList'
+import { ReverseButton } from '../../components/herd/ReverseButton'
 
 const dec = (s: string) => { const n = Number(s.replace(/\./g, '').replace(',', '.')); return s.trim() && Number.isFinite(n) ? n : null }
 const EXP_TYPES = ['Frete', 'Comissão', 'Taxas', 'GTA e documentação', 'Alimentação no transporte', 'Outros']
 
-interface SaleRec { date: string; buyerName: string; lotId: string; qty: number; totalKg: number; gross: number; expensesTotal: number; net: number; unit: string }
+interface SaleRec { id: string; reversedBy?: string; revenueEntryId?: string | null; date: string; buyerName: string; lotId: string; qty: number; totalKg: number; gross: number; expensesTotal: number; net: number; unit: string }
 
 export default function Exit() {
   const { farm, canEdit } = useApp()
   const { activeLots, identified, arroba, lotName, keyLabel } = useHerd()
   const toast = useToast()
   const blank = () => ({ opId: newId(farm!.id, 'sales'), date: today(), buyer: '', sel: emptyExit(), weighMode: 'total' as 'total' | 'medio', totalKg: '', avgKg: '',
-    unit: 'vivo' as ArrobaUnit, kgPerUnit: String(arroba.vivo), price: '', manual: false, manualGross: '', expenses: [{ type: 'Frete', description: '', amount: '' }], notes: '' })
+    unit: 'vivo' as ArrobaUnit, kgPerUnit: String(arroba.vivo), price: '', manual: false, manualGross: '', expenses: [{ type: 'Frete', description: '', amount: '' }], notes: '', postRevenue: true })
   const [f, setF] = useState(blank)
   const [review, setReview] = useState<null | { qty: number }>(null)
   const [err, setErr] = useState('')
@@ -55,7 +56,7 @@ export default function Exit() {
     try {
       const res = await saveSale(farm!.id, f.opId, {
         ...r.data!, date: f.date, notes: f.notes.trim(), buyerName: f.buyer.trim(), totalKg: calc.totalKg, avgKg: calc.avgKg, unit: f.unit, kgPerUnit: dec(f.kgPerUnit) ?? 0,
-        pricePerUnit: parseMoney(f.price) ?? 0, computedGross: calc.computedAmount, gross: calc.amount, manualGross: f.manual, expenses, expensesTotal: net.expenses, net: net.net,
+        pricePerUnit: parseMoney(f.price) ?? 0, computedGross: calc.computedAmount, gross: calc.amount, manualGross: f.manual, expenses, expensesTotal: net.expenses, net: net.net, postRevenue: f.postRevenue,
       }, idCount)
       toast(res === 'already-saved' ? 'info' : 'success', res === 'already-saved' ? 'Esta venda já havia sido registrada.' : `Venda registrada: −${r.qty} cab. Líquido ${money(net.net)}.`)
       setReview(null); setF({ ...blank(), date: f.date, unit: f.unit, kgPerUnit: f.kgPerUnit })
@@ -106,13 +107,16 @@ export default function Exit() {
               {byType.map((x) => <div key={x.t} className="flex justify-between text-stone-600 dark:text-stone-300"><span>(−) {x.t}</span><span className="tabular">{money(x.v)}</span></div>)}
               <div className="flex justify-between border-t border-stone-300 pt-1 text-base font-semibold dark:border-stone-700"><span>(=) TOTAL LÍQUIDO</span><span className="tabular text-brand-700 dark:text-brand-300">{money(net.net)}</span></div>
             </div>
+            <label className="mt-3 flex items-start gap-2"><input type="checkbox" className="mt-0.5 size-4 accent-brand-600" checked={f.postRevenue} onChange={(e) => setF({ ...f, postRevenue: e.target.checked })} />Lançar o valor líquido como receita no financeiro (uma única vez para esta venda).</label>
           </div>
           <div className="flex justify-end border-t border-stone-200 p-3 dark:border-stone-800"><Button onClick={check}>Conferir e salvar</Button></div>
           {err && !review && <div className="px-4 pb-4"><ErrorBox>{err}</ErrorBox></div>}
         </Card>
       )}
-      <OpTable title="Vendas registradas" rows={sales} head={['Data', 'Comprador', 'Lote', 'Cab.', 'Peso', 'Bruto', 'Despesas', 'Líquido']}
-        render={(s) => <tr key={(s as SaleRec & { id: string }).id}><td className="td tabular">{fmtDate(s.date)}</td><td className="td">{s.buyerName}</td><td className="td">{lotName(s.lotId)}</td><td className="td tabular">{s.qty}</td><td className="td tabular">{number(s.totalKg)} kg</td><td className="td tabular">{money(s.gross)}</td><td className="td tabular">{money(s.expensesTotal)}</td><td className="td tabular font-medium">{money(s.net)}</td></tr>} />
+      <OpTable title="Vendas registradas" rows={sales} head={['Data', 'Comprador', 'Lote', 'Cab.', 'Peso', 'Bruto', 'Despesas', 'Líquido', 'Financeiro', '']}
+        render={(s) => <tr key={s.id} className={s.reversedBy ? 'text-stone-400' : ''}><td className="td tabular">{fmtDate(s.date)}</td><td className="td">{s.buyerName}</td><td className="td">{lotName(s.lotId)}</td><td className="td tabular">{s.qty}</td><td className="td tabular">{number(s.totalKg)} kg</td><td className="td tabular">{money(s.gross)}</td><td className="td tabular">{money(s.expensesTotal)}</td><td className="td tabular font-medium">{money(s.net)}</td>
+          <td className="td">{s.reversedBy ? '—' : s.revenueEntryId ? <Badge tone="green">Receita lançada</Badge> : canEdit ? <Button size="sm" variant="secondary" onClick={() => postSaleRevenue(farm!.id, s as SaleRec & { buyerName: string }).then(() => toast('success', 'Receita lançada no financeiro.')).catch((e) => toast('error', herdErr(e)))}>Lançar receita</Button> : '—'}</td>
+          <td className="td text-right"><ReverseButton col="sales" op={s} summary={`Venda de ${s.qty} cab. para ${s.buyerName} (${fmtDate(s.date)}) — líquido ${money(s.net)}`} /></td></tr>} />
       <Modal open={!!review} onClose={() => !saving && setReview(null)} title="Confirmar venda"
         footer={<><Button variant="secondary" disabled={saving} onClick={() => setReview(null)}>Voltar</Button><Button loading={saving} onClick={save}>Confirmar venda</Button></>}>
         <div className="space-y-2 text-sm">

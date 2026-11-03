@@ -22,8 +22,10 @@ export default function HerdDashboard() {
   const [period, setPeriod] = useState<Period>(() => periodFromMonth(t.slice(0, 7)))
   const [movs, setMovs] = useState<HerdMovement[] | null>(null)
   const [err, setErr] = useState('')
-  const purchases = useOps<{ date: string; qty: number; amount: number }>('purchases')
-  const sales = useOps<{ date: string; qty: number; net: number }>('sales')
+  const purchases = useOps<{ date: string; qty: number; amount: number; reversedBy?: string }>('purchases')?.filter((x) => !x.reversedBy) ?? null
+  const sales = useOps<{ date: string; qty: number; net: number; reversedBy?: string }>('sales')?.filter((x) => !x.reversedBy) ?? null
+  const deathOps = useOps<{ date: string; qty: number; reversedBy?: string }>('mortalityRecords')?.filter((x) => !x.reversedBy) ?? null
+  const reversals = useOps<{ date: string; originalId: string }>('reversals')
   const weighings = useOps<Weighing>('weighings')
   useEffect(() => { fetchMovements(farm!.id).then(setMovs).catch((e) => setErr(friendlyError(e))) }, [farm, lots])
 
@@ -34,15 +36,18 @@ export default function HerdDashboard() {
   const weighed = activeLots.filter((l) => l.avgWeightKg && l.count)
   const totalKg = weighed.reduce((s, l) => s + (l.avgWeightKg ?? 0) * l.count, 0)
   const coverage = weighed.reduce((s, l) => s + l.count, 0)
-  const pMovs = inP(movs)
-  const deaths = pMovs.filter((m) => m.type === 'morte').reduce((s, m) => s - m.total, 0)
+  // Fluxos (entradas/saídas) ignoram operações estornadas e os próprios estornos; saldos usam todo o histórico.
+  const reversedIds = new Set((reversals ?? []).map((r) => r.originalId))
+  const flowMovs = (movs ?? []).filter((m) => m.type !== 'estorno' && !reversedIds.has(m.refId ?? ''))
+  const pMovs = inP(flowMovs)
+  const deaths = inP(deathOps).reduce((s, d) => s + d.qty, 0)
   const vaccApplied = inP(vaccinations.filter((v) => v.status === 'aplicada')).reduce((s, v) => s + v.qty, 0)
   const alerts = vaccineAlerts(vaccinations, t, 30, daysBetween)
 
   const months = period.mode === 'month' ? monthsBetween(`${shiftMonth(period.month, -11)}-01`, period.end) : monthsBetween(period.start, period.end).slice(-24)
   const evolution = useMemo(() => movs ? herdEvolution(movs, months, (ym) => monthRange(ym)[1]) : [], [movs, months])
   const inOut = months.map((ym) => {
-    const m = (movs ?? []).filter((x) => x.date.startsWith(ym) && x.type !== 'troca_categoria')
+    const m = flowMovs.filter((x) => x.date.startsWith(ym) && x.type !== 'troca_categoria')
     return { label: monthLabel(ym), values: [m.filter((x) => x.total > 0).reduce((s, x) => s + x.total, 0), -m.filter((x) => x.total < 0).reduce((s, x) => s + x.total, 0)] }
   })
   const weightEvo = months.map((ym) => {

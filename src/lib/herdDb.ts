@@ -1,7 +1,7 @@
-import { doc, getDocs, query, orderBy, runTransaction, serverTimestamp, where, type Transaction, collection } from 'firebase/firestore'
+import { doc, getDoc, getDocs, query, orderBy, runTransaction, serverTimestamp, where, type Transaction, collection } from 'firebase/firestore'
 import { auth, db } from './firebase'
 import { clean, farmCol, farmDoc, newId } from './db'
-import { balanceKey, parseKey, weightedAvg, type Animal, type HerdLot, type HerdMovement, type MovementType, type Sex } from './herd'
+import { balanceKey, inverseMovement, parseKey, REVERSIBLE_LABEL, weightedAvg, type Animal, type HerdLot, type HerdMovement, type MovementType, type ReversibleCol, type Sex } from './herd'
 
 export class HerdError extends Error {}
 
@@ -215,6 +215,8 @@ async function checkUnidentified(tx: Transaction, farmId: string, e: ExitBase, i
 export interface SaleInput extends ExitBase {
   buyerName: string; totalKg: number; avgKg: number; unit: string; kgPerUnit: number; pricePerUnit: number
   computedGross: number; gross: number; manualGross: boolean; expenses: { type: string; description: string; amount: number }[]; expensesTotal: number; net: number
+  /** Lança a receita líquida no financeiro (id determinístico: nunca duplica). */
+  postRevenue?: boolean
 }
 export async function saveSale(farmId: string, opId: string, s: SaleInput, identifiedActiveInKey: number) {
   const qty = exitQty(s)
@@ -222,7 +224,10 @@ export async function saveSale(farmId: string, opId: string, s: SaleInput, ident
   return idempotent(farmId, 'sales', opId, async (tx) => {
     await checkUnidentified(tx, farmId, s, identifiedActiveInKey)
     await applyMoves(tx, farmId, opId, 'venda', [{ lotId: s.lotId, type: 'venda', date: s.date, key1: balanceKey(s.categoryId, s.sex), qty1: -qty, animalIds: s.animalIds, note: `Venda para ${s.buyerName}` }])
-    tx.set(farmDoc(farmId, 'sales', opId), clean({ ...s, qty, integrationId: `herd-sale-${opId}`, createdBy: uid(), createdAt: ts() }))
+    const integrationId = `herd-sale-${opId}`
+    const post = s.postRevenue && s.net > 0
+    tx.set(farmDoc(farmId, 'sales', opId), clean({ ...s, postRevenue: undefined, qty, integrationId, revenueEntryId: post ? integrationId : null, createdBy: uid(), createdAt: ts() }))
+    if (post) tx.set(farmDoc(farmId, 'revenueEntries', integrationId), revenueDoc(opId, s.date, s.net, s.buyerName, qty))
     s.animalIds.forEach((id) => tx.update(farmDoc(farmId, 'animals', id), { status: 'vendido', exitRef: opId, updatedAt: ts() }))
     log(tx, farmId, 'venda_animais', `${qty} cab. para ${s.buyerName}, líquido ${s.net} centavos`)
   })
@@ -356,4 +361,92 @@ export async function fetchOtherFarmLots(farmId: string) {
     lots: lots.docs.map((d) => ({ id: d.id, ...d.data() }) as HerdLot).filter((l) => l.active),
     categories: cats.docs.map((d) => ({ id: d.id, name: d.data().name as string, active: d.data().active as boolean })).filter((c) => c.active),
   }
+}
+
+/* ---------------- Receita de vendas ---------------- */
+
+function revenueDoc(saleId: string, date: string, net: number, buyer: string, qty: number) {
+  return { date, amount: net, source: 'venda_animais', description: `Venda de ${qty} cab. — ${buyer}`.slice(0, 300), saleId, createdBy: uid(), createdAt: ts() }
+}
+
+/** Lança no financeiro a receita de uma venda já registrada (idempotente). */
+export async function postSaleRevenue(farmId: string, sale: { id: string; date: string; net: number; buyerName: string; qty: number; revenueEntryId?: string | null; reversedBy?: string }) {
+  if (sale.reversedBy) throw new HerdError('Venda estornada não gera receita.')
+  if (!(sale.net > 0)) throw new HerdError('Venda sem valor líquido positivo.')
+  const id = `herd-sale-${sale.id}`
+  await runTransaction(db, async (tx) => {
+    const ref = farmDoc(farmId, 'revenueEntries', id)
+    if ((await tx.get(ref)).exists()) return
+    tx.set(ref, revenueDoc(sale.id, sale.date, sale.net, sale.buyerName, sale.qty))
+    tx.update(farmDoc(farmId, 'sales', sale.id), { revenueEntryId: id })
+    log(tx, farmId, 'receita_venda_lancada', `${id}: ${sale.net} centavos`)
+  })
+}
+
+/* ---------------- Estorno ---------------- */
+
+/**
+ * Estorna uma operação do rebanho sem apagar nada: grava movimentações inversas
+ * (tipo "estorno") em cada lote afetado, um registro em `reversals` e marca a operação
+ * original com `reversedBy`. Animais voltam ao estado anterior e o lançamento financeiro
+ * vinculado (despesa da compra / receita da venda) é removido. Saldos são revalidados:
+ * não é possível estornar uma compra cujos animais já saíram do lote.
+ * Id determinístico (rev-{operação}): cada operação só pode ser estornada uma vez.
+ */
+export async function reverseOperation(farmId: string, col: ReversibleCol, opId: string, reason: string, date: string) {
+  const reversalId = `rev-${opId}`
+  const op = (await getDoc(farmDoc(farmId, col, opId))).data() as Record<string, unknown> | undefined
+  if (!op) throw new HerdError('Operação não encontrada.')
+  if (op.reversedBy) throw new HerdError('Esta operação já foi estornada.')
+  const external = col === 'herdTransfers' && !!op.external
+  if (col === 'herdTransfers' && op.direction === 'entrada') throw new HerdError('Estorne a transferência na fazenda de origem.')
+  const destFarm = external ? (op.toFarmId as string) : null
+  const own = (await getDocs(query(farmCol(farmId, 'herdMovements'), where('refId', '==', opId)))).docs.map((d) => ({ id: d.id, ...d.data() }) as HerdMovement)
+  const dest = destFarm ? (await getDocs(query(farmCol(destFarm, 'herdMovements'), where('refId', '==', opId)))).docs.map((d) => ({ id: d.id, ...d.data() }) as HerdMovement) : []
+  if (!own.length) throw new HerdError('Movimentações da operação não encontradas.')
+  const label = REVERSIBLE_LABEL[col]
+
+  return idempotent(farmId, 'reversals', reversalId, async (tx) => {
+    const cur = await tx.get(farmDoc(farmId, col, opId))
+    if (cur.data()?.reversedBy) throw new HerdError('Esta operação já foi estornada.')
+    // Animais afetados: lidos antes das gravações (exigência das transações).
+    const animalIds = [...new Set(own.flatMap((m) => m.animalIds ?? []))]
+    const animalSnaps = await Promise.all(animalIds.map((id) => tx.get(farmDoc(farmId, 'animals', id))))
+    const destAnimalIds = [...new Set(dest.flatMap((m) => m.animalIds ?? []))]
+    const destSnaps = destFarm ? await Promise.all(destAnimalIds.map((id) => tx.get(farmDoc(destFarm, 'animals', id)))) : []
+    for (const a of destSnaps) if (a.exists() && a.data().status !== 'ativo') throw new HerdError(`O animal ${a.data().tag} já saiu da fazenda de destino; não é possível estornar.`)
+
+    await applyMoves(tx, farmId, reversalId, 'estorno', [
+      ...own.map((m) => ({ lotId: m.lotId, type: 'estorno' as const, date, ...inverseMovement(m), animalIds: m.animalIds, note: `Estorno de ${label}: ${reason}` })),
+      ...dest.map((m) => ({ farmId: destFarm!, lotId: m.lotId, type: 'estorno' as const, date, ...inverseMovement(m), animalIds: m.animalIds, note: `Estorno de ${label}: ${reason}` })),
+    ])
+    tx.set(farmDoc(farmId, 'reversals', reversalId), { originalCol: col, originalId: opId, reason: reason.slice(0, 300), date, createdBy: uid(), createdAt: ts() })
+    tx.update(farmDoc(farmId, col, opId), { reversedBy: reversalId, reversedAt: ts() })
+
+    // Animais: desfaz o efeito da operação original.
+    for (const a of animalSnaps) {
+      if (!a.exists()) continue
+      const d = a.data(), ref = farmDoc(farmId, 'animals', a.id)
+      if (col === 'purchases') {
+        if (d.status !== 'ativo') throw new HerdError(`O animal ${d.tag} já saiu do rebanho; estorne antes a saída dele.`)
+        tx.update(ref, { status: 'estornado', exitRef: reversalId, updatedAt: ts() })
+      } else if (col === 'sales' || col === 'mortalityRecords' || (col === 'herdTransfers' && external)) {
+        tx.update(ref, { status: 'ativo', exitRef: null, reversalRef: reversalId, updatedAt: ts() })
+      } else if (col === 'herdTransfers') {
+        tx.update(ref, { lotId: op.lotId as string, updatedAt: ts() })
+      } else if (col === 'categoryChanges') {
+        tx.update(ref, { categoryId: op.fromCategoryId as string, updatedAt: ts() })
+      }
+    }
+    if (destFarm) {
+      for (const a of destSnaps) if (a.exists()) tx.update(farmDoc(destFarm, 'animals', a.id), { status: 'estornado', exitRef: reversalId, updatedAt: ts() })
+      tx.set(farmDoc(destFarm, 'reversals', reversalId), { originalCol: col, originalId: opId, reason: reason.slice(0, 300), date, fromFarmId: farmId, createdBy: uid(), createdAt: ts() })
+      tx.update(farmDoc(destFarm, 'herdTransfers', opId), { reversedBy: reversalId, reversedAt: ts() })
+      log(tx, destFarm, 'estorno_transferencia', `${opId} estornada na origem: ${reason}`)
+    }
+    // Financeiro vinculado (ids determinísticos): remove a despesa da compra ou a receita da venda.
+    if (col === 'purchases' && op.financeEntryId) tx.delete(farmDoc(farmId, 'expenseEntries', op.financeEntryId as string))
+    if (col === 'sales' && op.revenueEntryId) tx.delete(farmDoc(farmId, 'revenueEntries', op.revenueEntryId as string))
+    log(tx, farmId, 'estorno', `${label} ${opId}: ${reason}`)
+  })
 }

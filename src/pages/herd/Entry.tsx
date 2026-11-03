@@ -12,6 +12,9 @@ import { Button, Card, ErrorBox, Field, Modal, PageHeader, cx, useToast } from '
 import { CategorySexFields } from '../../components/herd/LotKeyPicker'
 import { UnitFields, unitLabel } from '../../components/herd/UnitFields'
 import { herdErr } from '../../components/herd/HerdForms'
+import { OpTable, useOps } from '../../components/herd/OpList'
+import { ReverseButton } from '../../components/herd/ReverseButton'
+import { fmtDate } from '../../lib/format'
 
 const dec = (s: string) => { const n = Number(s.replace(/\./g, '').replace(',', '.')); return s.trim() && Number.isFinite(n) ? n : null }
 
@@ -29,6 +32,10 @@ export default function Entry() {
   const [saving, setSaving] = useState(false)
   const set = (k: keyof ReturnType<typeof blank>) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
   const lot = activeLots.find((l) => l.id === f.lotId)
+  type POp = { id: string; date: string; sellerName: string; buyerName: string; lotId: string; categoryId: string; qty: number; totalKg: number; amount: number; reversedBy?: string; financeEntryId?: string | null }
+  type BOp = { id: string; date: string; lotId: string; categoryId: string; qty: number; responsible?: string; reversedBy?: string }
+  const purchases = useOps<POp>('purchases')
+  const births = useOps<BOp>('births')
 
   const individual = f.weighMode === 'individual'
   const indivKg = f.animals.reduce((s, a) => s + (dec(a.kg) ?? 0), 0)
@@ -152,6 +159,17 @@ export default function Entry() {
         </div>
         {err && !review && <div className="px-4 pb-4"><ErrorBox>{err}</ErrorBox></div>}
       </Card>
+
+      {mode === 'compra' ? (
+        <OpTable title="Compras registradas" rows={purchases} head={['Data', 'Vendedor', 'Comprador', 'Lote', 'Categoria', 'Cab.', 'Peso', 'Valor', '']}
+          render={(p) => <tr key={p.id} className={p.reversedBy ? 'text-stone-400' : ''}><td className="td tabular">{fmtDate(p.date)}</td><td className="td">{p.sellerName}</td><td className="td">{p.buyerName}</td><td className="td">{lotName(p.lotId)}</td><td className="td">{catName(p.categoryId)}</td>
+            <td className="td tabular">{p.qty}</td><td className="td tabular">{number(p.totalKg)} kg</td><td className="td tabular">{money(p.amount)}</td>
+            <td className="td text-right"><ReverseButton col="purchases" op={p} summary={`Compra de ${p.qty} cab. de ${p.sellerName} (${fmtDate(p.date)}) — ${money(p.amount)}`} /></td></tr>} />
+      ) : (
+        <OpTable title="Nascimentos registrados" rows={births} head={['Data', 'Lote', 'Categoria', 'Cab.', 'Responsável', '']}
+          render={(b) => <tr key={b.id} className={b.reversedBy ? 'text-stone-400' : ''}><td className="td tabular">{fmtDate(b.date)}</td><td className="td">{lotName(b.lotId)}</td><td className="td">{catName(b.categoryId)}</td><td className="td tabular">{b.qty}</td><td className="td">{b.responsible || '—'}</td>
+            <td className="td text-right"><ReverseButton col="births" op={b} summary={`Nascimento de ${b.qty} cab. em ${lotName(b.lotId)} (${fmtDate(b.date)})`} /></td></tr>} />
+      )}
 
       <Modal open={review} onClose={() => !saving && setReview(false)} title="Confirmar entrada"
         footer={<><Button variant="secondary" disabled={saving} onClick={() => setReview(false)}>Voltar</Button><Button loading={saving} onClick={save}>Confirmar</Button></>}>
