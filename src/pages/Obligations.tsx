@@ -48,7 +48,7 @@ export default function Obligations() {
         </select>
       </div>
       <Card>{dataReady ? <ObligationList items={list} /> : <Spinner />}</Card>
-      <p className="mt-3 text-xs text-stone-500">O AgroGestão organiza e lembra obrigações informadas por você. Ele não calcula direitos trabalhistas nem substitui orientação contábil ou jurídica.</p>
+      <p className="mt-3 text-xs text-stone-500">O Gestão Rural organiza e lembra obrigações informadas por você. Ele não calcula direitos trabalhistas nem substitui orientação contábil ou jurídica.</p>
       <ObligationForm open={open} onClose={() => setOpen(false)} />
     </>
   )

@@ -79,7 +79,7 @@ export function ObligationForm({ open, onClose, editing, collaboratorId }: { ope
         {nonCltWarning && (
           <p className="flex gap-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-900 sm:col-span-2 dark:bg-amber-900/30 dark:text-amber-200">
             <AlertTriangle className="size-4 shrink-0" />
-            {c!.name} tem vínculo “{BOND_LABEL[c!.bond]}”. Confirme se esta obrigação se aplica — o AgroGestão apenas organiza e lembra, não calcula direitos trabalhistas.
+            {c!.name} tem vínculo “{BOND_LABEL[c!.bond]}”. Confirme se esta obrigação se aplica — o Gestão Rural apenas organiza e lembra, não calcula direitos trabalhistas.
           </p>
         )}
         <Field label="Período de referência"><input className="input" value={f.referencePeriod} onChange={set('referencePeriod')} placeholder="Ex.: 2026" maxLength={20} /></Field>

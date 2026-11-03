@@ -1,4 +1,4 @@
-# AgroGestão
+# Gestão Rural
 
 SaaS de administração financeira para fazendas de gado: colaboradores, lançamentos em planilha, obrigações (férias, 13º) com lembretes, relatórios exportáveis e PWA instalável.
 

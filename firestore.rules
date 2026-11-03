@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// AgroGestão — regras restritivas por fazenda.
+// Gestão Rural — regras restritivas por fazenda.
 // Todo dado de negócio vive em farms/{farmId}/... e só é acessível a quem tem
 // um documento em farms/{farmId}/members/{uid}. Papéis: owner, admin, viewer.
 service cloud.firestore {

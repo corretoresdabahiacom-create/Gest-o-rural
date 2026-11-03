@@ -12,8 +12,8 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifestFilename: 'manifest.webmanifest',
       manifest: {
-        name: 'AgroGestão',
-        short_name: 'AgroGestão',
+        name: 'Gestão Rural',
+        short_name: 'Gestão Rural',
         description: 'Administração financeira de fazendas de gado',
         lang: 'pt-BR',
         start_url: '/',

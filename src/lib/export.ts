@@ -94,7 +94,7 @@ export async function exportPdf(r: ReportResult, farm: string) {
     columnStyles: Object.fromEntries(r.columns.map((c, i) => [i, right(c) ? { halign: 'right' } : {}])),
     didDrawPage: () => {
       doc.setFontSize(8); doc.setTextColor(150)
-      doc.text(`AgroGestão · gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Bahia' })}`, 40, doc.internal.pageSize.getHeight() - 20)
+      doc.text(`Gestão Rural · gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Bahia' })}`, 40, doc.internal.pageSize.getHeight() - 20)
     },
   })
   doc.save(`${slug(farm)}-${slug(r.title)}.pdf`)

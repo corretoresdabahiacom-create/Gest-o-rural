@@ -57,7 +57,7 @@ function UpdatePrompt() {
   return (
     <div className="no-print fixed inset-x-3 top-3 z-[70] mx-auto flex max-w-md items-center gap-3 rounded-xl border border-brand-200 bg-white p-3 text-sm shadow-lg dark:border-brand-800 dark:bg-stone-900">
       <RefreshCw className="size-5 text-brand-600" />
-      <span className="flex-1">Nova versão do AgroGestão disponível.</span>
+      <span className="flex-1">Nova versão do Gestão Rural disponível.</span>
       <Button size="sm" onClick={() => updateServiceWorker(true)}>Atualizar</Button>
     </div>
   )
@@ -80,7 +80,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <aside className="no-print fixed inset-y-0 left-0 hidden w-64 flex-col border-r border-stone-200 bg-white px-3 py-4 dark:border-stone-800 dark:bg-stone-900 lg:flex">
         <div className="mb-6 flex items-center gap-2.5 px-2">
           <Logo className="size-9" />
-          <div className="min-w-0 flex-1"><div className="font-semibold leading-tight">AgroGestão</div><FarmSwitcher /></div>
+          <div className="min-w-0 flex-1"><div className="font-semibold leading-tight">Gestão Rural</div><FarmSwitcher /></div>
         </div>
         <nav className="flex flex-1 flex-col gap-0.5">
           {NAV.map(({ to, label, icon: I, end }) => <NavLink key={to} to={to} end={end} className={link}><I className="size-4.5" />{label}</NavLink>)}
@@ -98,7 +98,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="no-print sticky top-0 z-30 flex items-center gap-2.5 border-b border-stone-200 bg-white/90 px-4 pt-[env(safe-area-inset-top)] backdrop-blur dark:border-stone-800 dark:bg-stone-900/90 lg:hidden">
         <div className="flex h-14 flex-1 items-center gap-2.5 min-w-0">
           <Logo className="size-8" />
-          <div className="min-w-0 flex-1"><div className="text-sm font-semibold leading-tight">AgroGestão</div><FarmSwitcher /></div>
+          <div className="min-w-0 flex-1"><div className="text-sm font-semibold leading-tight">Gestão Rural</div><FarmSwitcher /></div>
           <button onClick={toggle} className="rounded-lg p-2 text-stone-500" aria-label="Alternar tema">{dark ? <Sun className="size-5" /> : <Moon className="size-5" />}</button>
         </div>
       </header>
