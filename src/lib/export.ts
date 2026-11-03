@@ -10,6 +10,8 @@ export function formatCell(v: string | number | null | undefined, c: Column): st
     case 'date': return fmtDate(String(v))
     case 'percent': return pct.format(Number(v))
     case 'number': return Number(v).toLocaleString('pt-BR')
+    case 'kg': return `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg`
+    case 'decimal': return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     default: return String(v)
   }
 }
@@ -32,6 +34,7 @@ export function toCsv(r: ReportResult): string {
     if (c.type === 'money') return (Number(v) / 100).toFixed(2).replace('.', ',')
     if (c.type === 'percent') return (Number(v) * 100).toFixed(1).replace('.', ',') + '%'
     if (c.type === 'date') return fmtDate(String(v))
+    if (c.type === 'kg' || c.type === 'decimal') return String(Math.round(Number(v) * 100) / 100).replace('.', ',')
     return String(v)
   }
   return [r.columns.map((c) => esc(c.label)).join(';'), ...allRows(r).map((row) => r.columns.map((c) => esc(cell(row[c.key], c))).join(';'))].join('\r\n')
@@ -64,6 +67,8 @@ export async function exportXlsx(r: ReportResult, farm: string) {
       if (c.type === 'money') cell.numFmt = '"R$" #,##0.00'
       if (c.type === 'date') cell.numFmt = 'dd/mm/yyyy'
       if (c.type === 'percent') cell.numFmt = '0.0%'
+      if (c.type === 'kg') cell.numFmt = '#,##0.0 "kg"'
+      if (c.type === 'decimal') cell.numFmt = '#,##0.00'
     })
     if (row === r.totals) xr.font = { bold: true }
   }
@@ -77,7 +82,7 @@ export async function exportPdf(r: ReportResult, farm: string) {
   const doc = new jsPDF({ orientation: r.columns.length > 5 ? 'landscape' : 'portrait', unit: 'pt', format: 'a4' })
   doc.setFontSize(14); doc.text(`${farm} — ${r.title}`, 40, 40)
   doc.setFontSize(9); doc.setTextColor(110); doc.text(r.subtitle, 40, 56)
-  const right = (c: Column) => ['money', 'number', 'percent'].includes(c.type ?? '')
+  const right = (c: Column) => ['money', 'number', 'percent', 'kg', 'decimal'].includes(c.type ?? '')
   autoTable(doc, {
     startY: 70,
     head: [r.columns.map((c) => c.label)],

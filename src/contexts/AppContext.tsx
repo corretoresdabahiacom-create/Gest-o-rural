@@ -3,6 +3,7 @@ import { onAuthStateChanged, type User } from 'firebase/auth'
 import { collection, collectionGroup, doc, getDoc, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
 import { addLog, farmDoc, newId, useFarmCollection } from '../lib/db'
+import { DEFAULT_ANIMAL_CATEGORIES, DEFAULT_ARROBA } from '../lib/herd'
 import {
   DEFAULT_ALERT_DAYS, DEFAULT_CATEGORIES, DEFAULT_LABOR_TYPES,
   type Collaborator, type Farm, type Invite, type Named, type Obligation, type Role,
@@ -92,12 +93,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const u = auth.currentUser!
     const id = doc(collection(db, 'farms')).id
     const b1 = writeBatch(db)
-    b1.set(doc(db, 'farms', id), { name: name.trim(), ownerUid: u.uid, ownerName: u.displayName ?? '', alertDays: DEFAULT_ALERT_DAYS, createdAt: serverTimestamp() })
+    b1.set(doc(db, 'farms', id), { name: name.trim(), ownerUid: u.uid, ownerName: u.displayName ?? '', alertDays: DEFAULT_ALERT_DAYS, arroba: { ...DEFAULT_ARROBA, outraLabel: 'Outra unidade' }, createdAt: serverTimestamp() })
     b1.set(farmDoc(id, 'members', u.uid), { uid: u.uid, email: u.email ?? '', name: u.displayName ?? '', role: 'owner', joinedAt: serverTimestamp() })
     await b1.commit()
     const b2 = writeBatch(db)
     for (const n of DEFAULT_LABOR_TYPES) b2.set(farmDoc(id, 'laborTypes', newId(id, 'laborTypes')), { name: n, active: true, createdAt: serverTimestamp() })
     for (const n of DEFAULT_CATEGORIES) b2.set(farmDoc(id, 'expenseCategories', newId(id, 'expenseCategories')), { name: n, active: true, createdAt: serverTimestamp() })
+    for (const n of DEFAULT_ANIMAL_CATEGORIES) b2.set(farmDoc(id, 'animalCategories', newId(id, 'animalCategories')), { name: n, active: true, createdAt: serverTimestamp() })
     addLog(b2, id, 'fazenda_criada', name)
     await b2.commit()
     setFarmId(id)

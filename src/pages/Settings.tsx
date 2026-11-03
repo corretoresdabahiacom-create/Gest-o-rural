@@ -90,6 +90,37 @@ function AlertSettings() {
   )
 }
 
+function ArrobaSettings() {
+  const { farm, canEdit } = useApp()
+  const toast = useToast()
+  const cur = farm!.arroba ?? { vivo: 30, carcaca: 15, outra: 30, outraLabel: 'Outra unidade' }
+  const [f, setF] = useState({ vivo: String(cur.vivo), carcaca: String(cur.carcaca), outra: String(cur.outra), outraLabel: cur.outraLabel })
+  useEffect(() => { const c = farm!.arroba; if (c) setF({ vivo: String(c.vivo), carcaca: String(c.carcaca), outra: String(c.outra), outraLabel: c.outraLabel }) }, [farm])
+  async function save() {
+    const n = (s: string) => Number(s.replace(',', '.'))
+    const v = { vivo: n(f.vivo), carcaca: n(f.carcaca), outra: n(f.outra), outraLabel: f.outraLabel.trim() || 'Outra unidade' }
+    if (![v.vivo, v.carcaca, v.outra].every((x) => x > 0 && x < 1000)) return toast('error', 'Informe fatores em kg maiores que zero.')
+    try {
+      const b = writeBatch(db)
+      b.update(doc(db, 'farms', farm!.id), { arroba: v, updatedAt: serverTimestamp() })
+      addLog(b, farm!.id, 'arroba_atualizada', JSON.stringify(v))
+      await b.commit()
+      toast('success', 'Unidades salvas. Operações já registradas mantêm o fator usado na época.')
+    } catch (e) { toast('error', friendlyError(e)) }
+  }
+  return (
+    <Card title="Unidades de pesagem e negociação" action={canEdit && <Button size="sm" onClick={save}>Salvar</Button>}>
+      <div className="grid gap-3 p-4 sm:grid-cols-2">
+        <Field label="Arroba de peso vivo (kg)"><input className="input" inputMode="decimal" disabled={!canEdit} value={f.vivo} onChange={(e) => setF({ ...f, vivo: e.target.value })} /></Field>
+        <Field label="Arroba de carcaça (kg)"><input className="input" inputMode="decimal" disabled={!canEdit} value={f.carcaca} onChange={(e) => setF({ ...f, carcaca: e.target.value })} /></Field>
+        <Field label="Outra unidade — nome"><input className="input" disabled={!canEdit} value={f.outraLabel} maxLength={30} onChange={(e) => setF({ ...f, outraLabel: e.target.value })} /></Field>
+        <Field label="Outra unidade (kg)"><input className="input" inputMode="decimal" disabled={!canEdit} value={f.outra} onChange={(e) => setF({ ...f, outra: e.target.value })} /></Field>
+        <p className="text-xs text-stone-500 sm:col-span-2">Valores padrão sugeridos em cada compra, venda e pesagem. Cada operação grava a unidade e o fator usados; peso vivo e carcaça nunca são convertidos entre si automaticamente.</p>
+      </div>
+    </Card>
+  )
+}
+
 function Members() {
   const { farm, role, canEdit, user } = useApp()
   const toast = useToast()
@@ -199,6 +230,7 @@ export default function Settings() {
         <FarmData />
         <div className="space-y-5">
           <AlertSettings />
+          <ArrobaSettings />
           <Card title="Preferências de exibição">
             <div className="flex items-center justify-between p-4 text-sm">
               <span>Tema {dark ? 'escuro' : 'claro'} <span className="block text-xs text-stone-500">Salvo neste dispositivo</span></span>

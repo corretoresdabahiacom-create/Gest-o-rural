@@ -23,7 +23,7 @@ export interface Filters {
   expenseType: string    // '' = todos | 'labor' | categoryId
   compareStart?: string; compareEnd?: string
 }
-export type CellType = 'text' | 'money' | 'date' | 'number' | 'percent'
+export type CellType = 'text' | 'money' | 'date' | 'number' | 'percent' | 'kg' | 'decimal'
 export interface Column { key: string; label: string; type?: CellType }
 export interface ReportResult { title: string; subtitle: string; columns: Column[]; rows: Record<string, string | number | null>[]; totals?: Record<string, string | number | null> }
 

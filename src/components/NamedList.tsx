@@ -8,7 +8,7 @@ import { useApp } from '../contexts/AppContext'
 import { Badge, Button, Empty, useToast } from './ui'
 
 /** Cadastro simples de nomes (tipos de mão de obra, categorias): criar, renomear, inativar/reativar. */
-export function NamedList({ collection, items, noun, extra }: { collection: 'laborTypes' | 'expenseCategories'; items: Named[]; noun: string; extra?: (n: Named) => ReactNode }) {
+export function NamedList({ collection, items, noun, extra }: { collection: 'laborTypes' | 'expenseCategories' | 'animalCategories'; items: Named[]; noun: string; extra?: (n: Named) => ReactNode }) {
   const { farm, canEdit } = useApp()
   const toast = useToast()
   const [name, setName] = useState('')

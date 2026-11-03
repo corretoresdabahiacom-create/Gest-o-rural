@@ -125,3 +125,48 @@ describe('logs de auditoria', () => {
     await assertFails(setDoc(doc(db, `farms/${F}/logs/l2`), { action: 'falso', detail: '', uid: 'dono', at: serverTimestamp() }))
   })
 })
+
+describe('rebanho: ledger verificado pelas regras', () => {
+  const lotSeed = async () => env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), `farms/${F}/herdLots/L1`), { name: 'Bois', sex: 'M', active: true, count: 100, balances: { 'bois|M': 100 }, lastMovementId: 'm0' })
+  })
+  const move = (qty: number, newCount: number, newBal: number, id = 'm1', key = 'bois|M') => {
+    const db = as('adm')
+    const b = writeBatch(db)
+    b.set(doc(db, `farms/${F}/herdMovements/${id}`), { type: qty < 0 ? 'venda' : 'compra', date: '2026-11-03', lotId: 'L1', keys: [key], key1: key, qty1: qty, total: qty, createdBy: 'adm', createdAt: serverTimestamp() })
+    b.update(doc(db, `farms/${F}/herdLots/L1`), { count: newCount, balances: { [key]: newBal }, lastMovementId: id })
+    return b.commit()
+  }
+  it('venda de 30 com saldo coerente é aceita', async () => { await lotSeed(); await assertSucceeds(move(-30, 70, 70)) })
+  it('saldo que não bate com a movimentação é recusado', async () => { await lotSeed(); await assertFails(move(-30, 80, 70)) })
+  it('saldo negativo é recusado (venda acima do disponível)', async () => { await lotSeed(); await assertFails(move(-101, -1, -1)) })
+  it('alterar quantidade sem movimentação é recusado', async () => {
+    await lotSeed()
+    await assertFails(updateDoc(doc(as('adm'), `farms/${F}/herdLots/L1`), { count: 150, balances: { 'bois|M': 150 } }))
+  })
+  it('movimentação sem atualizar o lote é recusada e movimentações são imutáveis', async () => {
+    await lotSeed()
+    await assertFails(setDoc(doc(as('adm'), `farms/${F}/herdMovements/solta`), { type: 'compra', date: '2026-11-03', lotId: 'L1', keys: ['bois|M'], key1: 'bois|M', qty1: 5, total: 5, createdBy: 'adm', createdAt: serverTimestamp() }))
+    await assertSucceeds(move(-30, 70, 70))
+    await assertFails(updateDoc(doc(as('adm'), `farms/${F}/herdMovements/m1`), { qty1: -1 }))
+    await assertFails(deleteDoc(doc(as('adm'), `farms/${F}/herdMovements/m1`)))
+  })
+  it('editar metadados do lote não mexe no saldo', async () => { await lotSeed(); await assertSucceeds(updateDoc(doc(as('adm'), `farms/${F}/herdLots/L1`), { name: 'Bois engorda', avgWeightKg: 420 })) })
+  it('outra fazenda não lê o rebanho; leitor não registra', async () => {
+    await lotSeed()
+    await assertFails(getDoc(doc(as('intruso'), `farms/${F}/herdLots/L1`)))
+    await assertFails(getDocs(query(collectionGroup(as('intruso'), 'herdMovements'))))
+    await assertFails(setDoc(doc(as('leitor'), `farms/${F}/vaccinations/v1`), { date: '2026-11-03', qty: 10, createdBy: 'leitor' }))
+  })
+})
+
+describe('pesagem: histórico preservado', () => {
+  it('registros só por inserção; correção apenas marca substituição', async () => {
+    const db = as('adm')
+    await assertSucceeds(setDoc(doc(db, `farms/${F}/weighings/w1`), { sessionId: 's1', date: '2026-11-03', mode: 'individual', lotId: 'L1', qty: 1, totalKg: 330, avgKg: 330, createdBy: 'adm' }))
+    await assertFails(updateDoc(doc(db, `farms/${F}/weighings/w1`), { avgKg: 300 }))
+    await assertSucceeds(updateDoc(doc(db, `farms/${F}/weighings/w1`), { supersededBy: 'w1-c1' }))
+    await assertFails(deleteDoc(doc(db, `farms/${F}/weighings/w1`)))
+    await assertFails(setDoc(doc(db, `farms/${F}/weighings/w1`), { sessionId: 's1', date: '2026-11-03', mode: 'individual', lotId: 'L1', qty: 1, totalKg: 1, avgKg: 1, createdBy: 'adm' }))
+  })
+})

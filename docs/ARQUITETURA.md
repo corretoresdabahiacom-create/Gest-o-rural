@@ -55,3 +55,67 @@ Para aceitar um convite, o e-mail precisa estar verificado (`email_verified`). I
 
 ## Dependências
 `react-router-dom` (rotas), `lucide-react` (ícones), `exceljs` (.xlsx), `jspdf` e `jspdf-autotable` (PDF). Os gráficos são componentes próprios, sem biblioteca. O `.npmrc` usa `legacy-peer-deps` porque `@firebase/rules-unit-testing`, usado só nos testes, ainda declara compatibilidade com o firebase 12.
+
+---
+
+# Fase 2 — Rebanho
+
+## Fonte da verdade: movimentações
+`farms/{farmId}/herdMovements` é o livro-razão do rebanho. Cada documento é imutável e registra o tipo, a data, o lote, uma ou duas chaves de saldo (`categoria|sexo`) com as quantidades, o total e a referência à operação de origem.
+
+| Tipo | Efeito no lote |
+|---|---|
+| inicial, compra, nascimento, transf_entrada | soma |
+| venda, morte, transf_saida | subtrai |
+| ajuste | ± (conferência física confirmada) |
+| troca_categoria | −n numa chave e +n em outra, sem mudar o total |
+
+O lote (`herdLots`) guarda o saldo agregado em três campos: `count`, `balances` (por categoria e sexo) e `lastMovementId`. Esse saldo serve para as telas ficarem rápidas e **é verificado pelas Security Rules**:
+- toda alteração de saldo exige uma movimentação nova, criada no mesmo envio e apontada por `lastMovementId`;
+- a movimentação, por sua vez, só pode ser criada se o lote apontar para ela;
+- o novo saldo de cada chave é igual ao saldo anterior mais a quantidade da movimentação, e nunca fica negativo;
+- apenas as chaves da movimentação mudam, e `count` acompanha o total.
+
+Por isso, nenhuma edição consegue mudar quantidades sem deixar rastro, e o saldo é sempre reconciliável. A tela Inventário → Reconciliação compara o saldo guardado com o histórico.
+
+Cada operação roda numa **transação** (`runTransaction`) que lê o saldo, valida e grava tudo junto. O id da operação é gerado quando o formulário abre, então um reenvio encontra o registro existente e não duplica nada. Uma transação nunca grava duas movimentações no mesmo lote, porque o par `lastMovementId` ↔ movimentação é único.
+
+## Operações
+| Coleção | Uso |
+|---|---|
+| `purchases` | compras: vendedor, comprador, unidade e fator de kg, preço, valor calculado ou manual, custo por cabeça, `integrationId`. Pesos individuais criam animais. |
+| `births` | nascimentos |
+| `sales` | vendas, com as despesas embutidas no próprio documento (em vez de uma coleção `saleExpenses`): bruto, despesas e líquido, além do `integrationId` |
+| `mortalityRecords` | mortes |
+| `herdTransfers` | transferências internas (duas movimentações, total inalterado) ou entre fazendas (saída numa, entrada na outra, mesmo id nas duas e animais copiados com `transferRef`). Nunca contadas como compra ou venda. |
+| `categoryChanges` | mudanças de categoria |
+| `herdInventories` / `inventoryAdjustments` | conferência física: o saldo só muda após confirmação explícita, com antes, depois, responsável e justificativa |
+| `vaccinations` | aplicadas ou programadas, com reforço. Cada uma tem `stockItemId`, reservado para a baixa de estoque futura. |
+
+Esses registros são somente inserção nas regras, com três exceções controladas: o status da conferência física, a baixa de reforço vacinal e a marcação de correção de pesagem.
+
+## Animais individuais e lotes
+O controle por lote funciona sem cadastro individual. Animais identificados (`animals`) pertencem a um lote e fazem parte do seu saldo. Na saída, o usuário escolhe os animais exatos e/ou uma quantidade sem identificação, limitada ao saldo que não está identificado. Lote, categoria e sexo de um animal só mudam por movimentação, nunca por edição.
+
+## Unidade comercial
+A arroba de peso vivo e a de carcaça têm fatores próprios, configurados em Configurações (padrão de 30 e 15 kg). Cada compra e venda grava a unidade e o fator usados. Não há conversão automática entre as duas, e o valor total pode ser informado manualmente.
+
+## Integração financeira
+- **Compra:** a opção marcável cria um lançamento de despesa com id determinístico (`herd-purchase-{id}`), então ele nunca duplica. O módulo financeiro não foi alterado.
+- **Venda:** guarda o `integrationId` (`herd-sale-{id}`) e o valor líquido, mas não gera lançamento, porque o financeiro atual registra apenas despesas.
+
+# Fase 3 — Pesagem
+
+| Coleção | Conteúdo |
+|---|---|
+| `weighingSessions` | cabeçalho: data, tipo (individual ou coletiva), lote, categoria, responsável, local e indicadores |
+| `weighings` | um registro por animal (individual, `qty = 1`) ou por lote (coletiva, dado agregado com método `balanca_coletiva` ou `media_informada`) |
+
+A pesagem coletiva **nunca** cria registros individuais.
+
+- **Peso anterior:** é a última pesagem individual válida do animal antes da data. Se não houver, vale o peso de entrada do cadastro. O histórico acompanha o animal mesmo após transferências.
+- **GMD:** é calculado como (atual − anterior) ÷ dias. Fica indisponível quando não há pesagem anterior válida ou quando o intervalo é ≤ 0.
+- **GMD do lote:** a partir de pesagens individuais, é a média dos GMD dos mesmos animais. Entre duas pesagens coletivas, só é apresentado se não houve movimentação no lote entre as datas e se a quantidade pesada foi a mesma. Caso contrário, o app mostra a diferença das médias com o aviso "não comparável".
+- **Gravação:** tudo vai num único lote atômico, com no máximo 240 linhas por sessão por causa do limite de 500 operações. O id gerado ao abrir a planilha evita duplicidade. Além dos registros, só são atualizados `animals.lastWeighing` e o peso médio de referência do lote. **Nunca** a quantidade do lote, vendas ou o financeiro.
+- **Correções:** uma correção cria um novo registro com `correctsId` e o motivo, e marca o original com `supersededBy`. O original nunca é editado nem apagado, e os relatórios usam apenas os registros vigentes.
+- **Importação (.xlsx via exceljs ou CSV):** o assistente segue as etapas de mapear colunas, validar data, lote, animal pertencente ao lote e peso, detectar duplicidades (no arquivo e com o histórico) e mostrar uma prévia. Só as linhas válidas são gravadas, em sessões marcadas como `importacao`.

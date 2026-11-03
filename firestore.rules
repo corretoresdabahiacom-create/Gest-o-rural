@@ -40,11 +40,12 @@ service cloud.firestore {
 
     match /farms/{farmId} {
       function validFarm() {
-        return d().keys().hasOnly(['name', 'ownerUid', 'ownerName', 'ownerPhone', 'ownerDocument', 'logoUrl', 'alertDays', 'createdAt', 'updatedAt'])
+        return d().keys().hasOnly(['name', 'ownerUid', 'ownerName', 'ownerPhone', 'ownerDocument', 'logoUrl', 'alertDays', 'arroba', 'createdAt', 'updatedAt'])
           && str(d().name, 1, 100)
           && optStr(d(), 'ownerName', 120) && optStr(d(), 'ownerPhone', 30) && optStr(d(), 'ownerDocument', 30)
           && optStr(d(), 'logoUrl', 500000)
-          && d().alertDays is list && d().alertDays.size() <= 8;
+          && d().alertDays is list && d().alertDays.size() <= 8
+          && (!('arroba' in d()) || d().arroba is map);
       }
       allow read: if isMember(farmId);
       allow create: if signedIn() && d().ownerUid == request.auth.uid && validFarm();
@@ -152,6 +153,102 @@ service cloud.firestore {
           && (d().status == 'pendente' || isDate(d().paidDate))
           && optStr(d(), 'title', 100) && optStr(d(), 'note', 500) && optStr(d(), 'referencePeriod', 20);
         allow delete: if canEdit(farmId);
+      }
+
+      // ======================= REBANHO =======================
+      match /animalCategories/{id} {
+        allow read: if isMember(farmId);
+        allow create, update: if canEdit(farmId)
+          && d().keys().hasOnly(['name', 'active', 'createdAt'])
+          && str(d().name, 1, 60) && d().active is bool;
+        allow delete: if false;
+      }
+
+      // Ledger: movimentações imutáveis. Cada uma precisa do lote apontando para ela
+      // (lastMovementId) no mesmo envio — e vice-versa (regra do lote abaixo).
+      match /herdMovements/{movId} {
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId)
+          && d().keys().hasOnly(['type', 'date', 'lotId', 'keys', 'key1', 'qty1', 'key2', 'qty2', 'total', 'animalIds', 'refType', 'refId',
+                                 'transferId', 'otherLotId', 'otherFarmId', 'note', 'createdBy', 'createdAt'])
+          && d().createdBy == request.auth.uid
+          && d().type in ['inicial', 'compra', 'nascimento', 'venda', 'morte', 'transf_saida', 'transf_entrada', 'ajuste', 'troca_categoria']
+          && isDate(d().date) && str(d().lotId, 1, 64)
+          && str(d().key1, 3, 140) && d().qty1 is int && d().qty1 != 0
+          && d().total is int
+          && (('key2' in d())
+                ? (str(d().key2, 3, 140) && d().qty2 is int && d().keys == [d().key1, d().key2] && d().total == d().qty1 + d().qty2)
+                : (d().keys == [d().key1] && d().total == d().qty1))
+          && (!('animalIds' in d()) || (d().animalIds is list && d().animalIds.size() <= 450))
+          && getAfter(/databases/$(database)/documents/farms/$(farmId)/herdLots/$(d().lotId)).data.lastMovementId == movId;
+        allow update, delete: if false;
+      }
+
+      match /herdLots/{lotId} {
+        function mv() { return getAfter(/databases/$(database)/documents/farms/$(farmId)/herdMovements/$(d().lastMovementId)).data; }
+        function validLotMeta() {
+          return d().keys().hasOnly(['name', 'code', 'categoryId', 'sex', 'formedAt', 'origin', 'sellerName', 'buyerName', 'notes', 'active',
+                                     'count', 'balances', 'lastMovementId', 'avgWeightKg', 'avgWeightAt', 'createdAt', 'updatedAt'])
+            && str(d().name, 1, 80) && d().sex in ['M', 'F', 'X'] && d().active is bool
+            && d().count is int && d().count >= 0 && d().balances is map
+            && optStr(d(), 'notes', 1000) && optStr(d(), 'sellerName', 120) && optStr(d(), 'buyerName', 120)
+            && (!('avgWeightKg' in d()) || d().avgWeightKg == null || (d().avgWeightKg is number && d().avgWeightKg >= 0 && d().avgWeightKg < 3000));
+        }
+        // Saldo novo = saldo anterior + movimentação criada no mesmo envio; nunca negativo.
+        function keyOk(m, k, q, prev) { return d().balances[k] is int && d().balances[k] == prev.get(k, 0) + q && d().balances[k] >= 0; }
+        function balanceChangeOk(prevCount, prev) {
+          return existsAfter(/databases/$(database)/documents/farms/$(farmId)/herdMovements/$(d().lastMovementId))
+            && mv().lotId == lotId
+            && d().count == prevCount + mv().total
+            && d().balances.diff(prev).affectedKeys().hasOnly(mv().keys)
+            && keyOk(mv(), mv().key1, mv().qty1, prev)
+            && (!('key2' in mv()) || keyOk(mv(), mv().key2, mv().qty2, prev));
+        }
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId) && validLotMeta() && (
+          ('lastMovementId' in d()) ? balanceChangeOk(0, {}) : (d().count == 0 && d().balances.size() == 0)
+        );
+        allow update: if canEdit(farmId) && validLotMeta() && (
+          !d().diff(resource.data).affectedKeys().hasAny(['count', 'balances', 'lastMovementId'])
+          || (d().lastMovementId != resource.data.get('lastMovementId', '') && balanceChangeOk(resource.data.count, resource.data.balances))
+        );
+        allow delete: if false;
+      }
+
+      match /animals/{id} {
+        function validAnimal() {
+          return d().keys().hasOnly(['tag', 'name', 'sex', 'categoryId', 'breed', 'birthDate', 'weightKg', 'lotId', 'entryDate', 'origin',
+                                     'sellerName', 'buyerName', 'acquisitionCost', 'notes', 'status', 'lastWeighing', 'purchaseId', 'exitRef',
+                                     'transferRef', 'createdBy', 'createdAt', 'updatedAt'])
+            && str(d().tag, 1, 40) && d().sex in ['M', 'F'] && str(d().categoryId, 1, 64) && str(d().lotId, 1, 64)
+            && isDate(d().entryDate) && d().origin in ['nascimento', 'compra', 'transferencia', 'existente']
+            && d().status in ['ativo', 'vendido', 'morto', 'transferido']
+            && optDate(d(), 'birthDate') && optMoney(d(), 'acquisitionCost') && optStr(d(), 'notes', 1000)
+            && (!('weightKg' in d()) || d().weightKg == null || (d().weightKg is number && d().weightKg > 0 && d().weightKg < 3000));
+        }
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId) && validAnimal() && d().status == 'ativo';
+        // Animal que saiu (vendido/morto/transferido) não volta a ficar ativo por edição.
+        allow update: if canEdit(farmId) && validAnimal()
+          && (resource.data.status == 'ativo' || d().status == resource.data.status);
+        allow delete: if false;
+      }
+
+      // Registros de operações: somente inserção (correções geram novas operações/ajustes).
+      match /{opCol}/{opId} {
+        allow read: if isMember(farmId) && opCol in ['purchases', 'sales', 'births', 'mortalityRecords', 'herdTransfers', 'categoryChanges',
+                                                     'inventoryAdjustments', 'herdInventories', 'vaccinations', 'weighingSessions', 'weighings'];
+        allow create: if canEdit(farmId)
+          && opCol in ['purchases', 'sales', 'births', 'mortalityRecords', 'herdTransfers', 'categoryChanges', 'inventoryAdjustments',
+                       'herdInventories', 'vaccinations', 'weighingSessions', 'weighings']
+          && d().createdBy == request.auth.uid && d().size() <= 60;
+        // Exceções controladas: status da conferência física, baixa de reforço vacinal e marcação de correção de pesagem.
+        allow update: if canEdit(farmId) && (
+          (opCol == 'herdInventories' && d().diff(resource.data).affectedKeys().hasOnly(['status', 'confirmedAt']))
+          || (opCol == 'vaccinations' && d().diff(resource.data).affectedKeys().hasOnly(['boosterDoneById', 'updatedAt']))
+          || (opCol == 'weighings' && d().diff(resource.data).affectedKeys().hasOnly(['supersededBy', 'updatedAt']))
+        );
+        allow delete: if false;
       }
 
       // Log de auditoria: só inserção, sem edição nem exclusão.

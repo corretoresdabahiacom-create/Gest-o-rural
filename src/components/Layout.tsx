@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import {
-  LayoutDashboard, Users, Receipt, Tags, BellRing, BarChart3, Settings, LogOut, Moon, Sun, MoreHorizontal, RefreshCw, ChevronDown, WifiOff,
+  LayoutDashboard, Users, Receipt, Beef, Tags, BellRing, BarChart3, Settings, LogOut, Moon, Sun, MoreHorizontal, RefreshCw, ChevronDown, WifiOff,
 } from 'lucide-react'
 import { auth } from '../lib/firebase'
 import { useApp } from '../contexts/AppContext'
@@ -15,6 +15,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/despesas', label: 'Despesas', icon: Receipt },
   { to: '/colaboradores', label: 'Colaboradores', icon: Users },
+  { to: '/rebanho', label: 'Rebanho', icon: Beef },
   { to: '/obrigacoes', label: 'Obrigações', icon: BellRing },
   { to: '/relatorios', label: 'Relatórios', icon: BarChart3 },
   { to: '/categorias', label: 'Tipos de despesa', icon: Tags },
@@ -118,7 +119,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </NavLink>
         ))}
         <button onClick={() => setMore((m) => !m)}
-          className={cx('flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium', more || ['/relatorios', '/categorias', '/configuracoes'].includes(loc.pathname) ? 'text-brand-700 dark:text-brand-300' : 'text-stone-500')}>
+          className={cx('flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium', more || ['/obrigacoes', '/relatorios', '/categorias', '/configuracoes'].includes(loc.pathname) ? 'text-brand-700 dark:text-brand-300' : 'text-stone-500')}>
           <MoreHorizontal className="size-5" />Mais
         </button>
       </nav>

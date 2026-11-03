@@ -1,22 +1,19 @@
 import { useMemo, useState } from 'react'
-import { FileDown, FileSpreadsheet, FileText, Printer } from 'lucide-react'
 import { useApp } from '../contexts/AppContext'
-import { useEntries, friendlyError } from '../lib/db'
+import { useEntries } from '../lib/db'
 import { monthRange, today } from '../lib/format'
 import { buildReport, REPORTS, type Filters, type ReportId } from '../lib/reports'
-import { exportCsv, exportPdf, exportXlsx, formatCell } from '../lib/export'
-import { Button, Card, Empty, ErrorBox, Field, Spinner, cx, useToast } from '../components/ui'
+import { ReportView } from '../components/ReportView'
+import { Button, Card, ErrorBox, Field, Spinner, cx } from '../components/ui'
 
 const ENTRY_REPORTS: ReportId[] = ['geral', 'colaborador', 'tipo', 'categoria', 'mensal', 'comparativo']
 
 export default function Reports() {
   const { farm, collaborators, laborTypes, categories, obligations } = useApp()
-  const toast = useToast()
   const t = today()
   const [rid, setRid] = useState<ReportId>('geral')
   const [mr] = useState(() => monthRange(t.slice(0, 7)))
   const [f, setF] = useState<Filters>({ start: mr[0], end: mr[1], collaboratorId: '', laborTypeId: '', expenseType: '', compareStart: '', compareEnd: '' })
-  const [busy, setBusy] = useState('')
   const invalid = f.start > f.end || (rid === 'comparativo' && (!f.compareStart || !f.compareEnd || f.compareStart > f.compareEnd))
 
   const a = useEntries(farm!.id, f.start, f.end)
@@ -32,13 +29,8 @@ export default function Reports() {
     const [s, e] = monthRange(ym)
     setF({ ...f, start: s, end: e })
   }
-  async function run(kind: string, fn: () => unknown) {
-    setBusy(kind)
-    try { await fn() } catch (e) { toast('error', friendlyError(e)) } finally { setBusy('') }
-  }
   const set = (k: keyof Filters) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
   const loading = ENTRY_REPORTS.includes(rid) && (a.loading || (rid === 'comparativo' && b.loading))
-  const right = (type?: string) => ['money', 'number', 'percent'].includes(type ?? '')
 
   return (
     <>
@@ -94,35 +86,7 @@ export default function Reports() {
       {invalid ? <ErrorBox>Verifique as datas: a data inicial deve ser anterior ou igual à final{rid === 'comparativo' ? ' e o período B deve ser preenchido' : ''}.</ErrorBox>
         : a.error ? <ErrorBox>{a.error}</ErrorBox>
         : loading || !report ? <Spinner /> : (
-        <Card title={<span>{report.title}<span className="block text-xs font-normal text-stone-500">{farm!.name} · {report.subtitle}</span></span>}
-          action={
-            <div className="no-print flex flex-wrap justify-end gap-1">
-              <Button size="sm" variant="secondary" loading={busy === 'xlsx'} disabled={!report.rows.length} onClick={() => run('xlsx', () => exportXlsx(report, farm!.name))}><FileSpreadsheet className="size-4" />Excel</Button>
-              <Button size="sm" variant="secondary" loading={busy === 'pdf'} disabled={!report.rows.length} onClick={() => run('pdf', () => exportPdf(report, farm!.name))}><FileText className="size-4" />PDF</Button>
-              <Button size="sm" variant="secondary" disabled={!report.rows.length} onClick={() => exportCsv(report, farm!.name)}><FileDown className="size-4" />CSV</Button>
-              <Button size="sm" variant="secondary" disabled={!report.rows.length} onClick={() => window.print()}><Printer className="size-4" />Imprimir</Button>
-            </div>
-          }>
-          {report.rows.length === 0 ? <Empty title="Nenhum resultado para os filtros selecionados" /> : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="border-b border-stone-200 dark:border-stone-800">
-                  <tr>{report.columns.map((c) => <th key={c.key} className={cx('th', right(c.type) && 'text-right')}>{c.label}</th>)}</tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {report.rows.map((row, i) => (
-                    <tr key={i}>{report.columns.map((c) => <td key={c.key} className={cx('td', right(c.type) && 'tabular text-right', c.type === 'date' && 'tabular')}>{formatCell(row[c.key], c)}</td>)}</tr>
-                  ))}
-                </tbody>
-                {report.totals && (
-                  <tfoot className="border-t-2 border-stone-300 bg-stone-50 font-semibold dark:border-stone-700 dark:bg-stone-800/50">
-                    <tr>{report.columns.map((c) => <td key={c.key} className={cx('td', right(c.type) && 'tabular text-right')}>{report.totals![c.key] == null ? '' : formatCell(report.totals![c.key], c)}</td>)}</tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-          )}
-        </Card>
+        <ReportView report={report} farmName={farm!.name} />
       )}
     </>
   )

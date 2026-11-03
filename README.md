@@ -60,3 +60,13 @@ As rotas da SPA funcionam sem configuração extra, porque o Pages serve o `inde
 3. Para dar acesso a outras pessoas, use **Configurações → Usuários autorizados → Convidar**. A pessoa cria conta com o mesmo e-mail, confirma o e-mail pelo link recebido e aceita o convite.
 
 Decisões de arquitetura: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+
+## Módulos
+
+| Módulo | O que faz |
+|---|---|
+| Administração | Dashboard, colaboradores, planilha de despesas, obrigações (férias e 13º) e relatórios financeiros |
+| **Rebanho** (menu Rebanho) | Lotes e animais, categorias, entrada (compra e nascimento), venda com despesas, mortes, transferências, vacinação, inventário (atual, histórico, conferência física e reconciliação) e 20 relatórios |
+| **Pesagem** (Rebanho → Pesagem) | Planilha individual e coletiva, GMD, histórico com correções rastreáveis, evolução por animal e por lote, painel, 11 relatórios e importação de Excel/CSV |
+
+> Ao atualizar uma versão anterior, publique as regras novas: `npx firebase deploy --only firestore:rules`. Em fazendas criadas antes do módulo de rebanho, use "Criar categorias padrão" na primeira visita ao Rebanho.
