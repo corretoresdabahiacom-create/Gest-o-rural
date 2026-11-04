@@ -27,6 +27,7 @@ interface AppState {
   dataReady: boolean
   selectFarm: (id: string) => void
   createFarm: (name: string) => Promise<void>
+  deleteFarm: (id: string, name: string) => Promise<void>
   acceptInvite: (inv: Invite) => Promise<void>
   refreshFarms: () => void
 }
@@ -69,7 +70,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const list = (await Promise.all(snap.docs.map(async (m) => {
         const id = m.id
         const f = await getDoc(doc(db, 'farms', id)).catch(() => null)
-        if (!f || !f.exists()) return null
+        if (!f || !f.exists() || f.data()?.deletedAt) return null
         const mem = await getDoc(doc(db, 'farms', id, 'members', user.uid)).catch(() => null)
         if (!mem || !mem.exists()) return null
         return { id, name: (f.data()?.name as string) ?? 'Fazenda', role: mem.data()!.role as Role }
@@ -97,7 +98,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!farmId) { setFarm(null); return }
     localStorage.setItem('ag-farm', farmId)
-    return onSnapshot(doc(db, 'farms', farmId), (s) => setFarm(s.exists() ? ({ id: s.id, alertDays: DEFAULT_ALERT_DAYS, ...s.data() } as Farm) : null))
+    return onSnapshot(doc(db, 'farms', farmId), (s) => {
+      if (s.exists() && s.data().deletedAt) { setFarm(null); setTick((t) => t + 1); return }
+      setFarm(s.exists() ? ({ id: s.id, alertDays: DEFAULT_ALERT_DAYS, ...s.data() } as Farm) : null)
+    })
   }, [farmId])
 
   const lt = useFarmCollection<Named>(farmId, 'laborTypes')
@@ -124,6 +128,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setFarmId(id)
   }, [])
 
+  const deleteFarm = useCallback(async (id: string, name: string) => {
+    const u = auth.currentUser!
+    const b = writeBatch(db)
+    b.update(doc(db, 'farms', id), { deletedAt: serverTimestamp(), deletedBy: u.uid })
+    addLog(b, id, 'fazenda_excluida', name)
+    b.delete(doc(db, 'users', u.uid, 'memberships', id))
+    await b.commit()
+    localStorage.removeItem('ag-farm')
+    setTick((t) => t + 1)
+  }, [])
+
   const acceptInvite = useCallback(async (inv: Invite) => {
     const u = auth.currentUser!
     const b = writeBatch(db)
@@ -146,9 +161,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     obligations: obl.data,
     dataReady: !lt.loading && !cat.loading && !col.loading && !obl.loading,
     selectFarm: setFarmId,
-    createFarm, acceptInvite,
+    createFarm, deleteFarm, acceptInvite,
     refreshFarms: () => setTick((t) => t + 1),
-  }), [user, authReady, farms, farmsReady, farmsError, invites, farm, role, lt, cat, col, obl, createFarm, acceptInvite])
+  }), [user, authReady, farms, farmsReady, farmsError, invites, farm, role, lt, cat, col, obl, createFarm, deleteFarm, acceptInvite])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

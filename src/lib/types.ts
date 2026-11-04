@@ -13,6 +13,7 @@ export interface Farm {
   ownerDocument?: string
   logoUrl?: string | null
   alertDays: number[]
+  deletedAt?: unknown
   arroba?: { vivo: number; carcaca: number; outra: number; outraLabel: string }
 }
 export interface Member { uid: string; email: string; name: string; role: Role }

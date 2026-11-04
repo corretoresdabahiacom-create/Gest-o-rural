@@ -52,7 +52,7 @@ service cloud.firestore {
 
     match /farms/{farmId} {
       function validFarm() {
-        return d().keys().hasOnly(['name', 'ownerUid', 'ownerName', 'ownerPhone', 'ownerDocument', 'logoUrl', 'alertDays', 'arroba', 'createdAt', 'updatedAt'])
+        return d().keys().hasOnly(['name', 'ownerUid', 'ownerName', 'ownerPhone', 'ownerDocument', 'logoUrl', 'alertDays', 'arroba', 'createdAt', 'updatedAt', 'deletedAt', 'deletedBy'])
           && str(d().name, 1, 100)
           && optStr(d(), 'ownerName', 120) && optStr(d(), 'ownerPhone', 30) && optStr(d(), 'ownerDocument', 30)
           && optStr(d(), 'logoUrl', 500000)
@@ -61,7 +61,10 @@ service cloud.firestore {
       }
       allow read: if isMember(farmId);
       allow create: if signedIn() && d().ownerUid == request.auth.uid && validFarm();
-      allow update: if canEdit(farmId) && unchanged('ownerUid') && validFarm();
+      // Exclusão = arquivamento (deletedAt). Só o proprietário pode marcar; os dados são preservados.
+      allow update: if canEdit(farmId) && unchanged('ownerUid') && validFarm()
+        && (!d().diff(resource.data).affectedKeys().hasAny(['deletedAt', 'deletedBy'])
+            || (isOwner(farmId) && d().deletedBy == request.auth.uid && d().deletedAt == request.time));
       allow delete: if false;
 
       match /members/{uid} {

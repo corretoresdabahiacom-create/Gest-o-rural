@@ -228,7 +228,7 @@ function Logs() {
 }
 
 function MyFarms() {
-  const { farms, farm, selectFarm, createFarm } = useApp()
+  const { farms, farm, selectFarm, createFarm, deleteFarm } = useApp()
   const toast = useToast()
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -236,6 +236,12 @@ function MyFarms() {
     if (!name.trim()) return
     setBusy(true)
     try { await createFarm(name); setName(''); toast('success', 'Fazenda criada.') } catch (e) { toast('error', friendlyError(e)) } finally { setBusy(false) }
+  }
+  async function remove(id: string, farmName: string) {
+    const typed = window.prompt(`Excluir a fazenda "${farmName}"?\n\nEla deixará de aparecer para todos os usuários. Os dados não são apagados do servidor.\n\nPara confirmar, digite o nome da fazenda:`)
+    if (typed === null) return
+    if (typed.trim() !== farmName.trim()) return toast('error', 'O nome digitado não confere. Nada foi excluído.')
+    try { await deleteFarm(id, farmName); toast('success', 'Fazenda excluída.') } catch (e) { toast('error', friendlyError(e)) }
   }
   return (
     <Card title="Minhas fazendas">
@@ -245,6 +251,7 @@ function MyFarms() {
             <span className="flex-1 truncate font-medium">{f.name}</span>
             <Badge tone="stone">{ROLE_LABEL[f.role]}</Badge>
             {f.id === farm?.id ? <Badge tone="green">Aberta</Badge> : <Button size="sm" variant="secondary" onClick={() => selectFarm(f.id)}>Abrir</Button>}
+            {f.role === 'owner' && <Button size="sm" variant="ghost" onClick={() => remove(f.id, f.name)} aria-label={`Excluir ${f.name}`}><Trash2 className="size-4" /></Button>}
           </li>
         ))}
       </ul>
