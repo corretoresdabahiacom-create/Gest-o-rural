@@ -7,9 +7,7 @@ const mark = `
   <ellipse cx="388" cy="236" rx="66" ry="27" transform="rotate(14 388 236)" fill="#f3e9d2"/>
   <ellipse cx="132" cy="237" rx="44" ry="14" transform="rotate(-14 132 237)" fill="#e9b0a0"/>
   <ellipse cx="380" cy="237" rx="44" ry="14" transform="rotate(14 380 237)" fill="#e9b0a0"/>
-  <path d="M60 226c20-24 60-30 96-12l-8 30c-34 4-70-2-88-18z" fill="#14301f"/>
   <path d="M176 202c0-36 160-36 160 0l-10 112c-5 62-30 104-70 104s-65-42-70-104z" fill="#f3e9d2"/>
-  <path d="M176 202c0-24 44-32 70-28l-6 62c-24 10-52 2-62-12z" fill="#14301f"/>
   <ellipse cx="256" cy="180" rx="36" ry="15" fill="#e7d9b8"/>
   <circle cx="218" cy="290" r="11" fill="#14301f"/><circle cx="294" cy="290" r="11" fill="#14301f"/>
   <ellipse cx="256" cy="376" rx="60" ry="40" fill="#e9b0a0"/>
