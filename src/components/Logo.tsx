@@ -12,16 +12,17 @@ export function Logo({ className = 'size-8' }: { className?: string }) {
 export function LogoMark() {
   return (
     <g>
-      <path d="M92 150c8 78 70 108 126 96l10 34c-82 20-150-36-136-130z" fill="#f3e9d2" />
-      <path d="M420 150c-8 78-70 108-126 96l-10 34c82 20 150-36 136-130z" fill="#f3e9d2" />
-      <ellipse cx="170" cy="266" rx="34" ry="15" transform="rotate(-18 170 266)" fill="#e7d9b8" />
-      <ellipse cx="342" cy="266" rx="34" ry="15" transform="rotate(18 342 266)" fill="#e7d9b8" />
-      <path d="M192 236c0-20 128-20 128 0l-12 104c-5 44-26 74-52 74s-47-30-52-74z" fill="#f3e9d2" />
-      <circle cx="226" cy="296" r="10" fill="#14301f" />
-      <circle cx="286" cy="296" r="10" fill="#14301f" />
-      <ellipse cx="256" cy="378" rx="40" ry="26" fill="#d39a4a" />
-      <circle cx="240" cy="378" r="6" fill="#14301f" />
-      <circle cx="272" cy="378" r="6" fill="#14301f" />
+  <ellipse cx="124" cy="236" rx="66" ry="27" transform="rotate(-14 124 236)" fill="#f3e9d2"/>
+  <ellipse cx="388" cy="236" rx="66" ry="27" transform="rotate(14 388 236)" fill="#f3e9d2"/>
+  <ellipse cx="132" cy="237" rx="44" ry="14" transform="rotate(-14 132 237)" fill="#e9b0a0"/>
+  <ellipse cx="380" cy="237" rx="44" ry="14" transform="rotate(14 380 237)" fill="#e9b0a0"/>
+  <path d="M60 226c20-24 60-30 96-12l-8 30c-34 4-70-2-88-18z" fill="#14301f"/>
+  <path d="M176 202c0-36 160-36 160 0l-10 112c-5 62-30 104-70 104s-65-42-70-104z" fill="#f3e9d2"/>
+  <path d="M176 202c0-24 44-32 70-28l-6 62c-24 10-52 2-62-12z" fill="#14301f"/>
+  <ellipse cx="256" cy="180" rx="36" ry="15" fill="#e7d9b8"/>
+  <circle cx="218" cy="290" r="11" fill="#14301f"/><circle cx="294" cy="290" r="11" fill="#14301f"/>
+  <ellipse cx="256" cy="376" rx="60" ry="40" fill="#e9b0a0"/>
+  <ellipse cx="236" cy="376" rx="8" ry="11" fill="#14301f"/><ellipse cx="276" cy="376" rx="8" ry="11" fill="#14301f"/>
     </g>
   )
 }
