@@ -138,3 +138,19 @@ Relatórios de operações e indicadores do painel ignoram operações estornada
 A coleção `revenueEntries` registra as receitas, com origem `venda_animais` ou `outra`. A venda de animais pode lançar o valor **líquido** como receita, com id determinístico `herd-sale-{venda}`, ou seja, uma única vez. Vendas antigas ganham o botão "Lançar receita". Receitas de venda só são corrigidas estornando a venda. As receitas manuais podem ser editadas e excluídas, com log.
 
 O painel principal mostra as receitas e o resultado (receitas − despesas) do período. O "Resumo financeiro mensal" ganhou as colunas Receitas e Resultado, e foi criado o relatório "Receitas por período". As despesas continuam em `expenseEntries`, sem mudanças, e por isso os totais de despesa não foram afetados.
+
+
+## Estoque (Fase 4)
+
+Mesmo modelo do rebanho: o histórico é a fonte da verdade e o saldo é agregado.
+
+| Coleção | Conteúdo |
+|---|---|
+| `stockItems` | cadastro (nome, categoria, unidade, mínimo) + `qtyMilli` (saldo em milésimos), `valueCents` (valor em centavos) e `lastMovementId`. Nunca é excluído, só inativado. |
+| `stockMovements` | entrada, saída, ajuste de contagem e estorno. Imutáveis. Cada uma tem `qtyDelta` e `valueDelta` assinados. |
+
+- **Regras de segurança**: o novo saldo/valor do item deve ser igual ao anterior + a movimentação criada no mesmo envio (`getAfter`/`existsAfter`); saldo nunca negativo; sem saldo, valor zero.
+- **Custo médio móvel**: entradas somam quantidade e valor; saídas baixam o valor proporcional ao saldo (baixa total zera o valor, sem sobra de arredondamento).
+- **Estorno**: movimentação inversa com id `rev-{id}` (só pode existir uma). Estornar entrada já consumida é recusado. A despesa vinculada (`stock-{id}` em `expenseEntries`) é removida.
+- **Integrações**: compra pode lançar despesa (categoria "Compra de estoque"); vacinação aplicada pode dar baixa em medicamento na mesma transação (`vac-{vacinação}`); saída pode ser ligada a um lote de animais (custo de alimentação por lote nos relatórios).
+- **Quantidades** são inteiras em milésimos (3 casas decimais), nunca ponto flutuante.

@@ -223,3 +223,36 @@ describe('planilha de pesagem', () => {
     await assertFails(deleteDoc(doc(as('adm'), `farms/${F}/weighingSheets/p1`)))
   })
 })
+
+describe('estoque: ledger verificado pelas regras', () => {
+  const item = { name: 'Sal mineral', category: 'alimentacao', unit: 'kg', active: true, qtyMilli: 100000, valueCents: 25000, lastMovementId: 'm0', createdBy: 'adm' }
+  const seed = async () => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), `farms/${F}/stockItems/I1`), item))
+  const mov = (type: string, qty: number, value: number, newQty: number, newValue: number, id = 'm1') => {
+    const db = as('adm'); const b = writeBatch(db)
+    b.set(doc(db, `farms/${F}/stockMovements/${id}`), { itemId: 'I1', itemName: 'Sal mineral', type, date: '2026-11-03', qtyDelta: qty, valueDelta: value, createdBy: 'adm', createdAt: serverTimestamp() })
+    b.update(doc(db, `farms/${F}/stockItems/I1`), { qtyMilli: newQty, valueCents: newValue, lastMovementId: id })
+    return b.commit()
+  }
+  it('saída com saldo e valor coerentes é aceita', async () => { await seed(); await assertSucceeds(mov('saida', -40000, -10000, 60000, 15000)) })
+  it('saldo que não bate com a movimentação é recusado', async () => { await seed(); await assertFails(mov('saida', -40000, -10000, 70000, 15000)) })
+  it('valor que não bate com a movimentação é recusado', async () => { await seed(); await assertFails(mov('saida', -40000, -10000, 60000, 20000)) })
+  it('saldo negativo é recusado', async () => { await seed(); await assertFails(mov('saida', -100001, -25000, -1, 0)) })
+  it('saída com quantidade positiva é recusada', async () => { await seed(); await assertFails(mov('saida', 1000, 0, 101000, 25000)) })
+  it('alterar saldo sem movimentação é recusado; editar cadastro é aceito', async () => {
+    await seed()
+    await assertFails(updateDoc(doc(as('adm'), `farms/${F}/stockItems/I1`), { qtyMilli: 999999 }))
+    await assertSucceeds(updateDoc(doc(as('adm'), `farms/${F}/stockItems/I1`), { name: 'Sal mineral 25 kg', minMilli: 20000 }))
+  })
+  it('movimentações são imutáveis; leitor não registra; outra fazenda não lê; item não pode ser excluído', async () => {
+    await seed(); await assertSucceeds(mov('saida', -40000, -10000, 60000, 15000))
+    await assertFails(updateDoc(doc(as('adm'), `farms/${F}/stockMovements/m1`), { qtyDelta: -1 }))
+    await assertFails(deleteDoc(doc(as('adm'), `farms/${F}/stockMovements/m1`)))
+    await assertFails(getDoc(doc(as('intruso'), `farms/${F}/stockItems/I1`)))
+    await assertFails(deleteDoc(doc(as('adm'), `farms/${F}/stockItems/I1`)))
+    await assertFails(setDoc(doc(as('leitor'), `farms/${F}/stockItems/I2`), { ...item, qtyMilli: 0, valueCents: 0, lastMovementId: undefined, createdBy: 'leitor' }))
+  })
+  it('estorno só com id rev-{original}', async () => {
+    await seed()
+    await assertFails(mov('estorno', 1000, 0, 101000, 25000, 'qualquer'))
+  })
+})

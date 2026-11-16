@@ -283,6 +283,58 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // ESTOQUE — itens com saldo/valor agregados e movimentações imutáveis (mesmo modelo do rebanho).
+      match /stockMovements/{movId} {
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId)
+          && d().keys().hasOnly(['itemId', 'itemName', 'itemCategory', 'itemUnit', 'type', 'date', 'qtyDelta', 'valueDelta', 'unitCostCents', 'reason',
+                                 'party', 'lotId', 'lotName', 'batchCode', 'expiryDate', 'note', 'reversesId', 'expenseEntryId', 'vaccinationId', 'createdBy', 'createdAt'])
+          && d().createdBy == request.auth.uid
+          && d().type in ['entrada', 'saida', 'ajuste', 'estorno']
+          && isDate(d().date) && optDate(d(), 'expiryDate')
+          && str(d().itemId, 1, 64) && str(d().itemName, 1, 120)
+          && d().qtyDelta is int && d().qtyDelta != 0 && d().valueDelta is int
+          && (d().type != 'entrada' || (d().qtyDelta > 0 && d().valueDelta >= 0))
+          && (d().type != 'saida' || (d().qtyDelta < 0 && d().valueDelta <= 0))
+          && ((d().type == 'estorno')
+                ? (str(d().reversesId, 1, 64) && movId == 'rev-' + d().reversesId)
+                : !('reversesId' in d()))
+          && optStr(d(), 'note', 500) && optStr(d(), 'party', 120) && optStr(d(), 'reason', 60) && optStr(d(), 'batchCode', 60)
+          && getAfter(/databases/$(database)/documents/farms/$(farmId)/stockItems/$(d().itemId)).data.lastMovementId == movId;
+        allow update, delete: if false;
+      }
+
+      match /stockItems/{itemId} {
+        function smv() { return getAfter(/databases/$(database)/documents/farms/$(farmId)/stockMovements/$(d().lastMovementId)).data; }
+        function validItemMeta() {
+          return d().keys().hasOnly(['name', 'category', 'unit', 'minMilli', 'supplier', 'notes', 'active', 'qtyMilli', 'valueCents', 'lastMovementId',
+                                     'createdBy', 'createdAt', 'updatedAt'])
+            && str(d().name, 1, 120) && d().category in ['insumo', 'medicamento', 'alimentacao', 'combustivel', 'ferramenta']
+            && str(d().unit, 1, 20) && d().active is bool
+            && d().qtyMilli is int && d().qtyMilli >= 0 && d().valueCents is int && d().valueCents >= 0
+            && (d().qtyMilli > 0 || d().valueCents == 0)
+            && (!('minMilli' in d()) || d().minMilli == null || (d().minMilli is int && d().minMilli >= 0))
+            && optStr(d(), 'supplier', 120) && optStr(d(), 'notes', 1000);
+        }
+        // Saldo e valor novos = anteriores + movimentação criada no mesmo envio.
+        function stockChangeOk(prevQty, prevValue) {
+          return existsAfter(/databases/$(database)/documents/farms/$(farmId)/stockMovements/$(d().lastMovementId))
+            && smv().itemId == itemId
+            && d().qtyMilli == prevQty + smv().qtyDelta
+            && d().valueCents == prevValue + smv().valueDelta;
+        }
+        allow read: if isMember(farmId);
+        allow create: if canEdit(farmId) && validItemMeta() && d().createdBy == request.auth.uid && (
+          ('lastMovementId' in d()) ? stockChangeOk(0, 0) : (d().qtyMilli == 0 && d().valueCents == 0)
+        );
+        allow update: if canEdit(farmId) && validItemMeta() && unchanged('category') && (
+          (d().qtyMilli == resource.data.qtyMilli && d().valueCents == resource.data.valueCents
+            && d().get('lastMovementId', '') == resource.data.get('lastMovementId', ''))
+          || (d().lastMovementId != resource.data.get('lastMovementId', '') && stockChangeOk(resource.data.qtyMilli, resource.data.valueCents))
+        );
+        allow delete: if false;
+      }
+
       // Registros de operações: somente inserção (correções geram novas operações/ajustes).
       match /{opCol}/{opId} {
         allow read: if isMember(farmId) && opCol in ['purchases', 'sales', 'births', 'mortalityRecords', 'herdTransfers', 'categoryChanges',

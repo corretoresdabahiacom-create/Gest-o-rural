@@ -1,6 +1,8 @@
 import { doc, getDoc, getDocs, query, orderBy, runTransaction, serverTimestamp, where, type Transaction, collection } from 'firebase/firestore'
 import { auth, db } from './firebase'
 import { clean, farmCol, farmDoc, newId } from './db'
+import { movementDoc } from './stockDb'
+import { planExit, type StockItem } from './stock'
 import { balanceKey, inverseMovement, parseKey, REVERSIBLE_LABEL, weightedAvg, type Animal, type HerdLot, type HerdMovement, type MovementType, type ReversibleCol, type Sex } from './herd'
 
 export class HerdError extends Error {}
@@ -331,12 +333,30 @@ export async function confirmPhysicalCount(farmId: string, invId: string, meta: 
 
 /* ---------------- Vacinação ---------------- */
 
-export async function saveVaccination(farmId: string, opId: string, v: Record<string, unknown> & { boosterOfId?: string | null }) {
+export async function saveVaccination(farmId: string, opId: string, v: Record<string, unknown> & { boosterOfId?: string | null },
+  stock?: { itemId: string; qtyMilli: number; lotName?: string }) {
   return idempotent(farmId, 'vaccinations', opId, async (tx) => {
-    tx.set(farmDoc(farmId, 'vaccinations', opId), clean({ ...v, createdBy: uid(), createdAt: ts() }))
+    // Baixa de estoque opcional, na mesma transação: ou grava a vacinação e a baixa, ou nada.
+    let stockWrite: (() => void) | null = null
+    if (stock) {
+      const itemRef = farmDoc(farmId, 'stockItems', stock.itemId)
+      const snap = await tx.get(itemRef)
+      if (!snap.exists()) throw new HerdError('Item de estoque não encontrado.')
+      const item = { id: snap.id, ...snap.data() } as StockItem
+      const d = planExit(item, stock.qtyMilli) // lança erro de saldo insuficiente
+      const movId = `vac-${opId}`
+      stockWrite = () => {
+        tx.set(farmDoc(farmId, 'stockMovements', movId), movementDoc(item.id, item, 'saida', String(v.date), d, {
+          reason: 'aplicacao', lotId: String(v.lotId), lotName: stock.lotName, vaccinationId: opId, note: `Vacinação: ${v.vaccine}`,
+        }))
+        tx.update(itemRef, { qtyMilli: item.qtyMilli + d.qtyDelta, valueCents: item.valueCents + d.valueDelta, lastMovementId: movId, updatedAt: ts() })
+      }
+    }
+    tx.set(farmDoc(farmId, 'vaccinations', opId), clean({ ...v, stockItemId: stock?.itemId ?? null, createdBy: uid(), createdAt: ts() }))
+    stockWrite?.()
     // Aplicação que cumpre um reforço/agenda anterior encerra o alerta daquele registro.
     if (v.boosterOfId) tx.update(farmDoc(farmId, 'vaccinations', v.boosterOfId), { boosterDoneById: opId, updatedAt: ts() })
-    log(tx, farmId, 'vacinacao', `${v.vaccine} — ${v.qty} cab. (${v.status})`)
+    log(tx, farmId, 'vacinacao', `${v.vaccine} — ${v.qty} cab. (${v.status})${stock ? ' · baixa de estoque' : ''}`)
   })
 }
 

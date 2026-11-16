@@ -19,6 +19,7 @@ const Obligations = lazy(() => import('./pages/Obligations'))
 const Reports = lazy(() => import('./pages/Reports'))
 const Settings = lazy(() => import('./pages/Settings'))
 const HerdModule = lazy(() => import('./pages/herd/HerdModule'))
+const StockModule = lazy(() => import('./pages/stock/StockModule'))
 const Revenues = lazy(() => import('./pages/Revenues'))
 const Worksheet = lazy(() => import('./pages/weighing/Worksheet'))
 
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/configuracoes" element={<Settings />} />
           <Route path="/rebanho/*" element={<HerdModule />} />
+          <Route path="/estoque/*" element={<StockModule />} />
           <Route path="/receitas" element={<Revenues />} />
           <Route path="/planilha-pesagem" element={<Worksheet />} />
           <Route path="*" element={<Navigate to="/" replace />} />

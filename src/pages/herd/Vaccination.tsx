@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { AlertTriangle, CalendarClock } from 'lucide-react'
 import { useApp } from '../../contexts/AppContext'
 import { useHerd } from '../../contexts/HerdContext'
-import { newId } from '../../lib/db'
+import { newId, useFarmCollection } from '../../lib/db'
+import { fmtQty, parseQty, StockError, type StockItem } from '../../lib/stock'
 import { saveVaccination } from '../../lib/herdDb'
 import { daysBetween, fmtDate, today } from '../../lib/format'
 import { vaccineAlerts, type Vaccination as Vac } from '../../lib/herd'
@@ -14,8 +15,11 @@ export default function Vaccination() {
   const { activeLots, lots, vaccinations, lotName, catName, categories } = useHerd()
   const toast = useToast()
   const t = today()
-  const blank = () => ({ opId: newId(farm!.id, 'vaccinations'), status: 'aplicada' as Vac['status'], date: t, lotId: '', categoryId: '', qty: '', vaccine: '', manufacturer: '', productLot: '', dose: '', responsible: '', boosterDate: '', boosterOfId: '', notes: '' })
+  const blank = () => ({ opId: newId(farm!.id, 'vaccinations'), status: 'aplicada' as Vac['status'], date: t, lotId: '', categoryId: '', qty: '', vaccine: '', manufacturer: '', productLot: '', dose: '', responsible: '', boosterDate: '', boosterOfId: '', notes: '', stockItemId: '', stockQty: '' })
   const [f, setF] = useState(blank)
+  const stock = useFarmCollection<StockItem>(farm!.id, 'stockItems')
+  const meds = stock.data.filter((i) => i.category === 'medicamento' && i.active && i.qtyMilli > 0).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+  const medItem = meds.find((i) => i.id === f.stockItemId)
   const [err, setErr] = useState('')
   const [saving, setSaving] = useState(false)
   const [tab, setTab] = useState<'alertas' | 'historico' | 'nao'>('alertas')
@@ -34,14 +38,20 @@ export default function Vaccination() {
     if (!f.lotId || !f.vaccine.trim() || qty < 1) return setErr('Informe lote, vacina e quantidade.')
     if (f.status === 'aplicada' && lot && qty > lot.count) return setErr(`Quantidade maior que o saldo do lote (${lot.count}).`)
     if (f.boosterDate && f.boosterDate <= f.date) return setErr('A data do reforço deve ser posterior à aplicação.')
+    let stockArg: { itemId: string; qtyMilli: number; lotName?: string } | undefined
+    if (f.status === 'aplicada' && f.stockItemId) {
+      const sq = parseQty(f.stockQty)
+      if (!sq || sq <= 0) return setErr('Informe a quantidade do produto usada, para dar baixa no estoque.')
+      stockArg = { itemId: f.stockItemId, qtyMilli: sq, lotName: lot?.name }
+    }
     setSaving(true); setErr('')
     try {
       await saveVaccination(farm!.id, f.opId, { status: f.status, date: f.date, lotId: f.lotId, categoryId: f.categoryId || null, qty, vaccine: f.vaccine.trim(), manufacturer: f.manufacturer.trim(),
         productLot: f.productLot.trim(), dose: f.dose.trim(), responsible: f.responsible.trim(), boosterDate: f.status === 'aplicada' ? f.boosterDate || null : null,
-        boosterOfId: f.status === 'aplicada' ? f.boosterOfId || null : null, notes: f.notes.trim(), stockItemId: null })
+        boosterOfId: f.status === 'aplicada' ? f.boosterOfId || null : null, notes: f.notes.trim() }, stockArg)
       toast('success', f.status === 'aplicada' ? 'Vacinação registrada.' : 'Vacinação programada.')
       setF({ ...blank(), date: f.date, responsible: f.responsible })
-    } catch (e) { setErr(herdErr(e)) } finally { setSaving(false) }
+    } catch (e) { setErr(e instanceof StockError ? e.message : herdErr(e)) } finally { setSaving(false) }
   }
 
   return (
@@ -64,6 +74,16 @@ export default function Vaccination() {
             <Field label="Lote do produto"><input className="input" value={f.productLot} onChange={set('productLot')} maxLength={60} /></Field>
             <Field label="Dose aplicada"><input className="input" value={f.dose} onChange={set('dose')} maxLength={40} placeholder="Ex.: 5 ml" /></Field>
             <Field label="Responsável"><input className="input" value={f.responsible} onChange={set('responsible')} maxLength={120} /></Field>
+            {f.status === 'aplicada' && meds.length > 0 && (
+              <>
+                <Field label="Dar baixa no estoque (opcional)" hint="Medicamentos cadastrados em Estoque.">
+                  <select className="input" value={f.stockItemId} onChange={(e) => setF({ ...f, stockItemId: e.target.value, stockQty: '' })}>
+                    <option value="">Não dar baixa</option>{meds.map((i) => <option key={i.id} value={i.id}>{i.name} — saldo {fmtQty(i.qtyMilli, i.unit)}</option>)}
+                  </select>
+                </Field>
+                {medItem && <Field label={`Quantidade usada (${medItem.unit}) *`}><input className="input" inputMode="decimal" value={f.stockQty} onChange={set('stockQty')} /></Field>}
+              </>
+            )}
             {f.status === 'aplicada' && <Field label="Reforço previsto"><input type="date" className="input" value={f.boosterDate} onChange={set('boosterDate')} /></Field>}
             {f.status === 'aplicada' && pendingForLot.length > 0 && (
               <Field label="Esta aplicação cumpre">
