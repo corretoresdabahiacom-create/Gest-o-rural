@@ -2,12 +2,46 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, BellRing, CalendarClock, Plus, Receipt, Scale, TrendingUp, Users, Wallet, Wrench } from 'lucide-react'
 import { useApp } from '../contexts/AppContext'
-import { useEntries, useRevenues } from '../lib/db'
+import { useEntries, useFarmCollection, useRevenues } from '../lib/db'
+import { daysBetween } from '../lib/format'
+import { vaccineAlerts, type Vaccination } from '../lib/herd'
+import { fmtQty, stockStatus, type StockItem } from '../lib/stock'
 import { fmtDate, money, monthLabel, monthsBetween, shiftMonth, today } from '../lib/format'
 import { alertMilestone, entryCategory, groupTotals, obligationAlerts, obligationName, sum } from '../lib/domain'
 import { Badge, Button, Card, Empty, ErrorBox, PageHeader, Spinner, Stat } from '../components/ui'
 import { BarList, MonthBars } from '../components/Charts'
 import { PeriodPicker, periodFromMonth, type Period } from '../components/PeriodPicker'
+
+/** Alertas do campo num só lugar: estoque para repor e vacinas vencendo (15 dias) ou atrasadas. */
+function FieldAlerts({ farmId }: { farmId: string }) {
+  const stock = useFarmCollection<StockItem>(farmId, 'stockItems')
+  const vac = useFarmCollection<Vaccination>(farmId, 'vaccinations')
+  const t = today()
+  const low = stock.data.filter((i) => i.active && stockStatus(i) !== 'ok').sort((a, b) => a.qtyMilli - b.qtyMilli)
+  const vacc = vaccineAlerts(vac.data, t, 15, daysBetween)
+  if (!low.length && !vacc.length) return null
+  return (
+    <Card title={<span className="flex items-center gap-2"><AlertTriangle className="size-4 text-amber-600" />Atenção no campo</span>} className="mt-5">
+      <ul className="divide-y divide-stone-100 text-sm dark:divide-stone-800">
+        {vacc.slice(0, 6).map((a) => (
+          <li key={a.v.id + a.kind}><Link to="/rebanho/vacinacao" className="flex items-center gap-3 px-4 py-2.5 hover:bg-stone-50 dark:hover:bg-stone-800/40">
+            <Badge tone={a.daysLeft < 0 ? 'red' : 'amber'}>{a.daysLeft < 0 ? `Atrasada ${-a.daysLeft}d` : a.daysLeft === 0 ? 'Hoje' : `${a.daysLeft}d`}</Badge>
+            <span className="flex-1">{a.kind === 'reforco' ? 'Reforço' : 'Vacinação programada'}: <b>{a.v.vaccine}</b> · {a.v.qty} cab.</span>
+            <span className="tabular text-stone-500">{fmtDate(a.due)}</span>
+          </Link></li>
+        ))}
+        {low.slice(0, 6).map((i) => (
+          <li key={i.id}><Link to={`/estoque/item/${i.id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-stone-50 dark:hover:bg-stone-800/40">
+            <Badge tone={stockStatus(i) === 'zerado' ? 'red' : 'amber'}>{stockStatus(i) === 'zerado' ? 'Zerado' : 'Repor'}</Badge>
+            <span className="flex-1">Estoque: <b>{i.name}</b></span>
+            <span className="tabular text-stone-500">{fmtQty(i.qtyMilli, i.unit)}{i.minMilli ? ` / mín. ${fmtQty(i.minMilli, i.unit)}` : ''}</span>
+          </Link></li>
+        ))}
+      </ul>
+      {(vacc.length > 6 || low.length > 6) && <p className="border-t border-stone-200 px-4 py-2 text-xs text-stone-500 dark:border-stone-800">Há mais alertas: veja Vacinação e Estoque.</p>}
+    </Card>
+  )
+}
 
 export default function Dashboard() {
   const { farm, collaborators, obligations, canEdit } = useApp()
@@ -49,6 +83,8 @@ export default function Dashboard() {
         <Stat label="Receitas" value={rev.loading ? '…' : money(revenue)} icon={<TrendingUp className="size-4" />} sub="Vendas de animais e outras" />
         <Stat label="Resultado (receitas − despesas)" value={loading || rev.loading ? '…' : money(revenue - labor - other)} icon={<Scale className="size-4" />} tone={revenue - labor - other >= 0 ? 'brand' : 'earth'} />
       </div>
+
+      <FieldAlerts farmId={farm!.id} />
 
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <Card title={<span className="flex items-center gap-2"><BellRing className="size-4 text-amber-600" />Próximos pagamentos e obrigações</span>}

@@ -10,11 +10,12 @@ const AnimalEvolution = lazy(() => import('./AnimalEvolution'))
 const LotEvolution = lazy(() => import('./LotEvolution'))
 const WeighReports = lazy(() => import('./WeighReports'))
 const WeighImport = lazy(() => import('./WeighImport'))
+const SaleProjection = lazy(() => import('./SaleProjection'))
 
 const TABS = [
   { to: '/rebanho/pesagem', label: 'Painel', end: true }, { to: '/rebanho/pesagem/nova', label: 'Nova pesagem' },
   { to: '/rebanho/pesagem/historico', label: 'Histórico' }, { to: '/rebanho/pesagem/animal', label: 'Evolução individual' },
-  { to: '/rebanho/pesagem/lotes', label: 'Evolução por lote' }, { to: '/rebanho/pesagem/relatorios', label: 'Relatórios' },
+  { to: '/rebanho/pesagem/lotes', label: 'Evolução por lote' }, { to: '/rebanho/pesagem/projecao', label: 'Projeção de venda' }, { to: '/rebanho/pesagem/relatorios', label: 'Relatórios' },
   { to: '/rebanho/pesagem/importar', label: 'Importar planilha' },
 ]
 
@@ -34,6 +35,7 @@ function Inner() {
           <Route path="lotes" element={<LotEvolution />} />
           <Route path="relatorios" element={<WeighReports />} />
           <Route path="importar" element={<WeighImport />} />
+          <Route path="projecao" element={<SaleProjection />} />
           <Route path="*" element={<Navigate to="/rebanho/pesagem" replace />} />
         </Routes>
       </Suspense>

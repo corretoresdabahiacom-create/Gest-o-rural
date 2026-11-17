@@ -54,6 +54,13 @@ function EditEntry({ entry, onClose }: { entry: ExpenseEntry | null; onClose: ()
   )
 }
 
+/** Despesas geradas por outra operação (compra de animais ou de estoque): corrigidas pelo estorno da origem, não aqui. */
+function linkedTo(e: ExpenseEntry): { to: string; label: string } | null {
+  if (e.id.startsWith('stock-')) return { to: '/estoque/movimentacoes', label: 'via estoque' }
+  if (e.id.startsWith('herd-purchase-')) return { to: '/rebanho/entrada', label: 'via compra de animais' }
+  return null
+}
+
 export default function Expenses() {
   const { farm, canEdit } = useApp()
   const toast = useToast()
@@ -112,8 +119,10 @@ export default function Expenses() {
                     <td className="td tabular text-right font-medium">{money(e.amount)}</td>
                     {canEdit && (
                       <td className="td whitespace-nowrap text-right">
+                        {linkedTo(e) ? <Link to={linkedTo(e)!.to} className="text-xs text-stone-500 hover:underline" title="Para corrigir, estorne a operação de origem">{linkedTo(e)!.label}</Link> : <>
                         <Button size="sm" variant="ghost" onClick={() => setEditing(e)} aria-label="Editar"><Pencil className="size-4" /></Button>
                         <Button size="sm" variant="ghost" onClick={() => remove(e)} aria-label="Excluir"><Trash2 className="size-4 text-stone-500" /></Button>
+                        </>}
                       </td>
                     )}
                   </tr>

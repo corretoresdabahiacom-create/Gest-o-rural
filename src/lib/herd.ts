@@ -199,7 +199,8 @@ export type VaccineAlert = { v: Vaccination; kind: 'programada' | 'reforco'; due
 export function vaccineAlerts(list: Vaccination[], today: string, windowDays = 30, daysBetween: (a: string, b: string) => number): VaccineAlert[] {
   const out: VaccineAlert[] = []
   for (const v of list) {
-    if (v.status === 'programada') out.push({ v, kind: 'programada', due: v.date, daysLeft: daysBetween(today, v.date) })
+    // Programada já cumprida (aplicação registrada com boosterOfId) não gera mais alerta.
+    if (v.status === 'programada') { if (!v.boosterDoneById) out.push({ v, kind: 'programada', due: v.date, daysLeft: daysBetween(today, v.date) }) }
     else if (v.boosterDate && !v.boosterDoneById) out.push({ v, kind: 'reforco', due: v.boosterDate, daysLeft: daysBetween(today, v.boosterDate) })
   }
   return out.filter((a) => a.daysLeft <= windowDays).sort((a, b) => a.daysLeft - b.daysLeft)

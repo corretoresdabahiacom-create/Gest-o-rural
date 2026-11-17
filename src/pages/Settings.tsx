@@ -144,7 +144,7 @@ function Members() {
       await copyLink(mail)
     } catch (e) { toast('error', friendlyError(e)) }
   }
-  function inviteLink(mail: string) { return `${window.location.origin}/?convite=${encodeURIComponent(mail)}` }
+  function inviteLink(mail: string) { return `${window.location.origin}/?convite=${encodeURIComponent(mail)}&fazenda=${farm!.id}` }
   async function copyLink(mail: string) {
     const text = `Você foi convidado para a fazenda ${farm!.name} no Gestão Rural. Acesse, crie sua conta com o e-mail ${mail} e aceite o convite: ${inviteLink(mail)}`
     try { await navigator.clipboard.writeText(text); toast('success', 'Link de convite copiado. Envie por WhatsApp ou e-mail.') }

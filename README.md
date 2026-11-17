@@ -1,8 +1,8 @@
 # Gestão Rural
 
-SaaS de administração financeira para fazendas de gado: colaboradores, lançamentos em planilha, obrigações (férias, 13º) com lembretes, relatórios exportáveis e PWA instalável.
+SaaS de gestão para fazendas de gado: finanças (colaboradores, despesas, receitas, obrigações de férias e 13º), rebanho, pesagem com projeção de venda, estoque, relatórios exportáveis e PWA instalável.
 
-**Stack:** React 19 + TypeScript + Vite + Tailwind 4 · Firebase Authentication + Cloud Firestore · Cloudflare Pages · vite-plugin-pwa.
+**Stack:** React 19 + TypeScript + Vite + Tailwind 4 · Firebase Authentication + Cloud Firestore · Cloudflare Workers (assets estáticos) · vite-plugin-pwa.
 
 ## Rodar localmente
 
@@ -23,7 +23,7 @@ npm run test:rules   # Security Rules no emulador do Firestore (requer Java 11+)
 
 1. Em <https://console.firebase.google.com> crie um projeto (o Google Analytics é opcional).
 2. **Authentication → Método de login →** ative **E-mail/senha**.
-3. **Authentication → Configurações → Domínios autorizados →** adicione o domínio do Cloudflare Pages (ex.: `agrogestao.pages.dev`) e o domínio próprio, se houver.
+3. **Authentication → Configurações → Domínios autorizados →** adicione o domínio publicado (hoje `gest-o-rural.pintolimadistribuidora.workers.dev`) e o domínio próprio, se houver.
 4. **Firestore Database → Criar banco** em modo de produção, região `southamerica-east1` (São Paulo).
 5. **Configurações do projeto → Seus apps → Web (`</>`)**: registre o app e copie os valores de `firebaseConfig` para as variáveis `VITE_FIREBASE_*`.
 6. Publique as regras e índices:
@@ -38,18 +38,17 @@ npm run test:rules   # Security Rules no emulador do Firestore (requer Java 11+)
 
 O Firebase Storage **não é necessário**: o logotipo opcional é reduzido a 256 px e salvo no próprio documento da fazenda.
 
-## 2. Publicar no Cloudflare Pages
+## 2. Publicar no Cloudflare (Worker com assets estáticos)
 
-Em **Workers & Pages → Create → Pages → Connect to Git**, selecione este repositório e configure:
+O site é um Worker do Cloudflare que serve a pasta `dist` (`wrangler.jsonc`, com `not_found_handling: single-page-application` para as rotas da SPA). A configuração web do Firebase vem de `.env.production`, que é pública por design.
 
-| Campo | Valor |
-|---|---|
-| Framework preset | Vite |
-| Build command | `npm run build` |
-| Build output directory | `dist` |
-| Variáveis de ambiente | `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `NODE_VERSION=22` |
+```bash
+npm run build
+npx wrangler login      # conta dona do Worker
+npx wrangler deploy
+```
 
-As rotas da SPA funcionam sem configuração extra, porque o Pages serve o `index.html` quando não há `404.html`. Cada push na `main` gera um novo deploy. O app avisa o usuário quando há uma nova versão disponível.
+Hoje o Worker **não está ligado ao GitHub**: cada versão é publicada com `wrangler deploy`. Para publicar a cada push, conecte o repositório em **Workers & Pages → gest-o-rural → Settings → Builds** (build `npm run build`, deploy `npx wrangler deploy`). O app avisa o usuário quando há uma nova versão disponível.
 
 ## 3. Primeiro acesso
 
@@ -57,7 +56,7 @@ As rotas da SPA funcionam sem configuração extra, porque o Pages serve o `inde
 2. Para instalar no celular:
    - **Android/Chrome:** menu ⋮ → *Instalar app*.
    - **iPhone/Safari:** Compartilhar → *Adicionar à Tela de Início*.
-3. Para dar acesso a outras pessoas, use **Configurações → Usuários autorizados → Convidar**. A pessoa cria conta com o mesmo e-mail, confirma o e-mail pelo link recebido e aceita o convite.
+3. Para dar acesso a outras pessoas, use **Configurações → Usuários autorizados → Convidar**: o link de convite é copiado para enviar por WhatsApp ou e-mail. A pessoa abre o link, cria conta com o mesmo e-mail, confirma o e-mail, toca em **Já confirmei** e aceita o convite. Quem já tem fazenda vê o convite no topo do app.
 
 Decisões de arquitetura: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
@@ -68,6 +67,6 @@ Decisões de arquitetura: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 | Administração | Dashboard, colaboradores, planilha de despesas, obrigações (férias e 13º) e relatórios financeiros |
 | **Rebanho** (menu Rebanho) | Lotes e animais, categorias, entrada (compra e nascimento), venda com despesas, mortes, transferências, vacinação, inventário (atual, histórico, conferência física e reconciliação) e 20 relatórios |
 | **Estoque** (menu Estoque) | Insumos, medicamentos, alimentação, combustíveis e ferramentas: entradas e saídas com custo médio, contagem física, estorno, estoque mínimo com alerta, baixa automática na vacinação, compra lançada no financeiro e 6 relatórios |
-| **Pesagem** (Rebanho → Pesagem) | Planilha individual e coletiva, GMD, histórico com correções rastreáveis, evolução por animal e por lote, painel, 11 relatórios e importação de Excel/CSV |
+| **Pesagem** (Rebanho → Pesagem) | Planilha individual e coletiva, GMD, histórico com correções rastreáveis, evolução por animal e por lote, **projeção de venda** (vender hoje ou esperar, com GMD, preço da @ e custo diário), painel, 11 relatórios e importação de Excel/CSV |
 
-> Ao atualizar uma versão anterior, publique as regras novas: `npx firebase deploy --only firestore:rules`. Em fazendas criadas antes do módulo de rebanho, use "Criar categorias padrão" na primeira visita ao Rebanho.
+> Ao atualizar uma versão anterior, publique as regras novas (console do Firebase → Firestore → Regras, ou `npx firebase deploy --only firestore:rules,firestore:indexes`). Em fazendas criadas antes do módulo de rebanho, use "Criar categorias padrão" na primeira visita ao Rebanho.

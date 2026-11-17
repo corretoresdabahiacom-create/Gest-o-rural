@@ -9,6 +9,20 @@ import {
   type Collaborator, type Farm, type Invite, type Named, type Obligation, type Role,
 } from '../lib/types'
 
+/** Convite aberto por link (?convite=email&fazenda=id), guardado até ser aceito. */
+const PENDING_KEY = 'ag-invite'
+export function capturePendingInvite() {
+  try {
+    const p = new URLSearchParams(window.location.search)
+    const farmId = p.get('fazenda')
+    if (farmId && /^[A-Za-z0-9_-]{1,64}$/.test(farmId)) localStorage.setItem(PENDING_KEY, JSON.stringify({ farmId, email: (p.get('convite') ?? '').toLowerCase() }))
+  } catch { /* armazenamento indisponível */ }
+}
+function readPendingInvite(): { farmId: string; email: string } | null {
+  try { const v = JSON.parse(localStorage.getItem(PENDING_KEY) ?? 'null'); return v?.farmId ? v : null } catch { return null }
+}
+function clearPendingInvite() { try { localStorage.removeItem(PENDING_KEY) } catch { /* ignore */ } }
+
 interface FarmRef { id: string; name: string; role: Role }
 interface AppState {
   user: User | null
@@ -30,6 +44,8 @@ interface AppState {
   deleteFarm: (id: string, name: string) => Promise<void>
   acceptInvite: (inv: Invite) => Promise<void>
   refreshFarms: () => void
+  /** Recarrega o login (e-mail confirmado em outra aba) e renova o token. */
+  refreshAuth: () => Promise<void>
 }
 
 const Ctx = createContext<AppState | null>(null)
@@ -47,6 +63,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [farmId, setFarmId] = useState<string | null>(null)
   const [farm, setFarm] = useState<Farm | null>(null)
   const [tick, setTick] = useState(0)
+  const [authTick, setAuthTick] = useState(0)
 
   useEffect(() => onAuthStateChanged(auth, (u) => { setUser(u); setAuthReady(true) }), [])
 
@@ -87,13 +104,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Convites pendentes (exige e-mail verificado — validado também nas regras).
   useEffect(() => {
     if (!user?.email || !user.emailVerified) { setInvites([]); return }
-    const q = query(collectionGroup(db, 'invites'), where('email', '==', user.email))
-    return onSnapshot(q, (snap) => {
-      setInvites(snap.docs
-        .map((d) => ({ ...(d.data() as Omit<Invite, 'farmId'>), farmId: d.ref.parent.parent!.id }))
-        .filter((i) => !farms.some((f) => f.id === i.farmId)))
-    }, () => setInvites([]))
-  }, [user, farms])
+    const email = user.email.toLowerCase()
+    let cancelled = false
+    let unsub: (() => void) | undefined
+    let direct: Invite[] = []
+    let group: Invite[] = []
+    const publish = () => {
+      if (cancelled) return
+      const all = new Map<string, Invite>()
+      for (const i of [...direct, ...group]) all.set(i.farmId, i)
+      setInvites([...all.values()].filter((i) => !farms.some((f) => f.id === i.farmId)))
+    }
+    ;(async () => {
+      // Logo após confirmar o e-mail, o token ainda diz "não verificado": renova antes de consultar.
+      const tok = await user.getIdTokenResult().catch(() => null)
+      if (tok && tok.claims.email_verified !== true) await user.getIdToken(true).catch(() => {})
+      if (cancelled) return
+      // 1) Convite vindo do link (?fazenda=...): leitura direta, não depende de índice.
+      const pending = readPendingInvite()
+      if (pending) {
+        const s = await getDoc(farmDoc(pending.farmId, 'invites', email)).catch(() => null)
+        direct = s?.exists() ? [{ ...(s.data() as Omit<Invite, 'farmId'>), farmId: pending.farmId }] : []
+        publish()
+      }
+      if (cancelled) return
+      // 2) Busca geral de convites (usa o índice invites.email em grupo de coleções, se existir).
+      unsub = onSnapshot(query(collectionGroup(db, 'invites'), where('email', '==', email)), (snap) => {
+        group = snap.docs.map((d) => ({ ...(d.data() as Omit<Invite, 'farmId'>), farmId: d.ref.parent.parent!.id }))
+        publish()
+      }, () => publish())
+    })()
+    return () => { cancelled = true; unsub?.() }
+  }, [user, farms, authTick])
 
   useEffect(() => {
     if (!farmId) { setFarm(null); return }
@@ -149,7 +191,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     b2.delete(farmDoc(inv.farmId, 'invites', inv.email))
     addLog(b2, inv.farmId, 'convite_aceito', `${u.email} como ${inv.role}`)
     await b2.commit().catch(() => {})
+    clearPendingInvite()
     setFarmId(inv.farmId)
+  }, [])
+
+  const refreshAuth = useCallback(async () => {
+    const u = auth.currentUser
+    if (!u) return
+    await u.reload()
+    await u.getIdToken(true)
+    setAuthTick((t) => t + 1)
   }, [])
 
   const value = useMemo<AppState>(() => ({
@@ -163,7 +214,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     selectFarm: setFarmId,
     createFarm, deleteFarm, acceptInvite,
     refreshFarms: () => setTick((t) => t + 1),
-  }), [user, authReady, farms, farmsReady, farmsError, invites, farm, role, lt, cat, col, obl, createFarm, deleteFarm, acceptInvite])
+    refreshAuth,
+  }), [user, authReady, farms, farmsReady, farmsError, invites, farm, role, lt, cat, col, obl, createFarm, deleteFarm, acceptInvite, refreshAuth, authTick])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

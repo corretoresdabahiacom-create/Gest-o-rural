@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App'
-import { AppProvider } from './contexts/AppContext'
+import { AppProvider, capturePendingInvite } from './contexts/AppContext'
 import { ToastProvider } from './components/ui'
+
+capturePendingInvite()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

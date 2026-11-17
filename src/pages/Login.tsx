@@ -47,7 +47,7 @@ export default function Login() {
         <div className="mb-8 flex flex-col items-center text-center">
           <Logo className="size-16" />
           <h1 className="mt-4 text-2xl font-semibold tracking-tight">Gestão Rural</h1>
-          <p className="mt-1 text-sm text-stone-500">Gestão financeira da sua fazenda, sem planilhas.</p>
+          <p className="mt-1 text-sm text-stone-500">Finanças, rebanho, pesagem e estoque da sua fazenda de gado.</p>
         </div>
         <form onSubmit={submit} className="card space-y-4 p-6 shadow-sm">
           {!firebaseConfigured && !emulatorMode && (

@@ -99,6 +99,10 @@ describe('vacinação e pesos', () => {
     expect(a.map((x) => [x.kind, x.daysLeft])).toEqual([['programada', -2], ['reforco', 7]])
     expect(list.filter((x) => x.status === 'aplicada').reduce((s, x) => s + x.qty, 0)).toBe(100)
   })
+  it('programada já cumprida não gera alerta', () => {
+    const a = vaccineAlerts([v({ status: 'programada', date: '2026-11-01', boosterDoneById: 'apl1' }), v({ status: 'programada', date: '2026-11-20' })], '2026-11-03', 30, daysBetween)
+    expect(a.map((x) => x.due)).toEqual(['2026-11-20'])
+  })
   it('peso médio ponderado do lote', () => {
     expect(weightedAvg(100, 400, 50, 300)).toBe(366.7)
     expect(weightedAvg(0, null, 10, 280)).toBe(280)

@@ -9,7 +9,7 @@ import { Button, Card, Empty, cx, useToast } from './ui'
 export function ReportView({ report, farmName }: { report: ReportResult; farmName: string }) {
   const toast = useToast()
   const [busy, setBusy] = useState('')
-  const right = (type?: string) => ['money', 'number', 'percent', 'kg'].includes(type ?? '')
+  const right = (type?: string) => ['money', 'number', 'percent', 'kg', 'decimal'].includes(type ?? '')
   async function run(kind: string, fn: () => unknown) {
     setBusy(kind)
     try { await fn() } catch (e) { toast('error', friendlyError(e)) } finally { setBusy('') }

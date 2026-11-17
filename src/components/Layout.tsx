@@ -8,7 +8,9 @@ import {
 import { auth } from '../lib/firebase'
 import { useApp } from '../contexts/AppContext'
 import { Logo } from './Logo'
-import { Button, cx } from './ui'
+import { Button, cx, useToast } from './ui'
+import { friendlyError } from '../lib/db'
+import { ROLE_LABEL } from '../lib/types'
 import { useOnline } from '../lib/hooks'
 
 const NAV = [
@@ -47,6 +49,24 @@ function FarmSwitcher() {
         {farms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
       </select>
       <ChevronDown className="pointer-events-none absolute top-0.5 right-0 size-3.5 text-stone-400" />
+    </div>
+  )
+}
+
+/** Convites recebidos por quem já tem fazenda (antes só apareciam na tela de criar a primeira). */
+function InviteBanner() {
+  const { invites, acceptInvite } = useApp()
+  const toast = useToast()
+  const [busy, setBusy] = useState('')
+  if (!invites.length) return null
+  return (
+    <div className="no-print mb-4 space-y-2">
+      {invites.map((i) => (
+        <div key={i.farmId} className="flex flex-wrap items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 p-3 text-sm dark:border-brand-800 dark:bg-brand-900/30">
+          <span className="flex-1">Você foi convidado para a fazenda <b>{i.farmName}</b> como {ROLE_LABEL[i.role]}.</span>
+          <Button size="sm" loading={busy === i.farmId} onClick={() => { setBusy(i.farmId); acceptInvite(i).then(() => toast('success', `Agora você tem acesso a ${i.farmName}.`)).catch((e) => toast('error', friendlyError(e))).finally(() => setBusy('')) }}>Aceitar</Button>
+        </div>
+      ))}
     </div>
   )
 }
@@ -111,7 +131,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <main className="mx-auto max-w-7xl px-4 py-5 pb-28 sm:px-6 lg:px-8 lg:py-8 lg:pb-8">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-5 pb-28 sm:px-6 lg:px-8 lg:py-8 lg:pb-8"><InviteBanner />{children}</main>
 
       {/* Mobile bottom nav */}
       <nav className="no-print fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)] dark:border-stone-800 dark:bg-stone-900 lg:hidden">

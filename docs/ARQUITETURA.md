@@ -90,7 +90,7 @@ Cada operação roda numa **transação** (`runTransaction`) que lê o saldo, va
 | `herdTransfers` | transferências internas (duas movimentações, total inalterado) ou entre fazendas (saída numa, entrada na outra, mesmo id nas duas e animais copiados com `transferRef`). Nunca contadas como compra ou venda. |
 | `categoryChanges` | mudanças de categoria |
 | `herdInventories` / `inventoryAdjustments` | conferência física: o saldo só muda após confirmação explícita, com antes, depois, responsável e justificativa |
-| `vaccinations` | aplicadas ou programadas, com reforço. Cada uma tem `stockItemId`, reservado para a baixa de estoque futura. |
+| `vaccinations` | aplicadas ou programadas, com reforço. Quando aplicada, pode dar baixa de um medicamento do estoque na mesma transação (`stockItemId` + movimentação `vac-{id}`). |
 
 Esses registros são somente inserção nas regras, com três exceções controladas: o status da conferência física, a baixa de reforço vacinal e a marcação de correção de pesagem.
 

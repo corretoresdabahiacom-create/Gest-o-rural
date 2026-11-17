@@ -9,7 +9,7 @@ import { Logo } from '../components/Logo'
 import { Button, ErrorBox, Field, useToast } from '../components/ui'
 
 export default function Onboarding() {
-  const { user, createFarm, invites, acceptInvite } = useApp()
+  const { user, createFarm, invites, acceptInvite, refreshAuth } = useApp()
   const toast = useToast()
   const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -45,7 +45,9 @@ export default function Onboarding() {
 
         {user && !user.emailVerified && (
           <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
-            Foi convidado para uma fazenda? Confirme seu e-mail pelo link enviado e recarregue a página para ver o convite.{' '}
+            Foi convidado para uma fazenda? Confirme seu e-mail pelo link enviado para {user.email} e depois toque em “Já confirmei”.{' '}
+            <button className="font-medium underline" onClick={() => refreshAuth().then(() => { if (!auth.currentUser?.emailVerified) toast('info', 'O e-mail ainda não aparece como confirmado. Abra o link do e-mail e tente de novo.') }).catch((e) => toast('error', friendlyError(e)))}>Já confirmei</button>
+            {' · '}
             <button className="underline" onClick={() => user && sendEmailVerification(user).then(() => toast('info', 'E-mail reenviado.')).catch((e) => toast('error', friendlyError(e)))}>Reenviar</button>
           </p>
         )}

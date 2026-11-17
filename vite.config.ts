@@ -14,7 +14,7 @@ export default defineConfig({
       manifest: {
         name: 'Gestão Rural',
         short_name: 'Gestão Rural',
-        description: 'Administração financeira de fazendas de gado',
+        description: 'Finanças, rebanho, pesagem e estoque de fazendas de gado',
         lang: 'pt-BR',
         start_url: '/',
         scope: '/',
