@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest'
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
-import { collectionGroup, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, deleteDoc, where, writeBatch } from 'firebase/firestore'
+import { collectionGroup, deleteField, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, deleteDoc, where, writeBatch } from 'firebase/firestore'
 
 let env: RulesTestEnvironment
 const F = 'fazendaA'
@@ -254,5 +254,31 @@ describe('estoque: ledger verificado pelas regras', () => {
   it('estorno só com id rev-{original}', async () => {
     await seed()
     await assertFails(mov('estorno', 1000, 0, 101000, 25000, 'qualquer'))
+  })
+})
+
+describe('restaurar fazenda arquivada', () => {
+  const archive = () => env.withSecurityRulesDisabled((ctx) => updateDoc(doc(ctx.firestore(), 'farms', F), { deletedAt: new Date(), deletedBy: 'dono' }))
+  const restore = (uid: string) => updateDoc(doc(as(uid), 'farms', F), { deletedAt: deleteField(), deletedBy: deleteField() })
+  it('proprietário restaura', async () => { await archive(); await assertSucceeds(restore('dono')) })
+  it('administrador não restaura', async () => { await archive(); await assertFails(restore('adm')) })
+  it('leitor e estranho não restauram', async () => { await archive(); await assertFails(restore('leitor')); await assertFails(restore('intruso')) })
+  it('restaurar só uma das marcas é recusado', async () => {
+    await archive()
+    await assertFails(updateDoc(doc(as('dono'), 'farms', F), { deletedAt: deleteField() }))
+  })
+})
+
+describe('índice de convites por e-mail', () => {
+  const entry = (uid: string, email = 'novo@x.com', farmId = F) => setDoc(doc(as(uid), `inviteLookup/${email}/farms/${farmId}`), { farmId, createdAt: serverTimestamp() })
+  it('administrador cria a entrada; leitor e estranho não', async () => {
+    await assertSucceeds(entry('adm')); await assertSucceeds(entry('dono'))
+    await assertFails(entry('leitor')); await assertFails(entry('intruso'))
+  })
+  it('só o convidado com e-mail verificado lista as próprias entradas', async () => {
+    await assertSucceeds(entry('adm'))
+    await assertSucceeds(getDoc(doc(as('novo', { email: 'novo@x.com', email_verified: true }), `inviteLookup/novo@x.com/farms/${F}`)))
+    await assertFails(getDoc(doc(as('novo', { email: 'novo@x.com', email_verified: false }), `inviteLookup/novo@x.com/farms/${F}`)))
+    await assertFails(getDoc(doc(as('outro', { email: 'outro@x.com', email_verified: true }), `inviteLookup/novo@x.com/farms/${F}`)))
   })
 })

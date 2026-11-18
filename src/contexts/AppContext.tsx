@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { onAuthStateChanged, type User } from 'firebase/auth'
-import { collection, collectionGroup, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore'
+import { collection, collectionGroup, deleteField, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
 import { addLog, farmDoc, newId, useFarmCollection } from '../lib/db'
 import { DEFAULT_ANIMAL_CATEGORIES, DEFAULT_ARROBA } from '../lib/herd'
@@ -42,6 +42,8 @@ interface AppState {
   selectFarm: (id: string) => void
   createFarm: (name: string) => Promise<void>
   deleteFarm: (id: string, name: string) => Promise<void>
+  /** Restaura uma fazenda arquivada (somente proprietário). */
+  restoreFarm: (id: string, name: string) => Promise<void>
   acceptInvite: (inv: Invite) => Promise<void>
   refreshFarms: () => void
   /** Recarrega o login (e-mail confirmado em outra aba) e renova o token. */
@@ -128,7 +130,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         publish()
       }
       if (cancelled) return
-      // 2) Busca geral de convites (usa o índice invites.email em grupo de coleções, se existir).
+      // 2) Índice por e-mail (inviteLookup): acha convites de links antigos, sem o código da fazenda e sem índice.
+      try {
+        const ls = await getDocs(collection(db, 'inviteLookup', email, 'farms'))
+        const found = (await Promise.all(ls.docs.map(async (l) => {
+          const s = await getDoc(farmDoc(l.id, 'invites', email)).catch(() => null)
+          return s?.exists() ? ({ ...(s.data() as Omit<Invite, 'farmId'>), farmId: l.id } as Invite) : null
+        }))).filter((x): x is Invite => !!x)
+        if (found.length) { direct = [...direct, ...found]; publish() }
+      } catch { /* sem permissão ou offline: segue com as outras buscas */ }
+      if (cancelled) return
+      // 3) Busca geral de convites (usa o índice invites.email em grupo de coleções, se existir).
       unsub = onSnapshot(query(collectionGroup(db, 'invites'), where('email', '==', email)), (snap) => {
         group = snap.docs.map((d) => ({ ...(d.data() as Omit<Invite, 'farmId'>), farmId: d.ref.parent.parent!.id }))
         publish()
@@ -181,6 +193,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTick((t) => t + 1)
   }, [])
 
+  const restoreFarm = useCallback(async (id: string, name: string) => {
+    const u = auth.currentUser!
+    const b = writeBatch(db)
+    b.update(doc(db, 'farms', id), { deletedAt: deleteField(), deletedBy: deleteField() })
+    b.set(doc(db, 'users', u.uid, 'memberships', id), { farmId: id, role: 'owner', createdAt: serverTimestamp() })
+    addLog(b, id, 'fazenda_restaurada', name)
+    await b.commit()
+    localStorage.setItem('ag-farm', id)
+    setFarmId(id)
+    setTick((t) => t + 1)
+  }, [])
+
   const acceptInvite = useCallback(async (inv: Invite) => {
     const u = auth.currentUser!
     const b = writeBatch(db)
@@ -212,10 +236,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     obligations: obl.data,
     dataReady: !lt.loading && !cat.loading && !col.loading && !obl.loading,
     selectFarm: setFarmId,
-    createFarm, deleteFarm, acceptInvite,
+    createFarm, deleteFarm, restoreFarm, acceptInvite,
     refreshFarms: () => setTick((t) => t + 1),
     refreshAuth,
-  }), [user, authReady, farms, farmsReady, farmsError, invites, farm, role, lt, cat, col, obl, createFarm, deleteFarm, acceptInvite, refreshAuth, authTick])
+  }), [user, authReady, farms, farmsReady, farmsError, invites, farm, role, lt, cat, col, obl, createFarm, deleteFarm, restoreFarm, acceptInvite, refreshAuth, authTick])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

@@ -50,6 +50,16 @@ service cloud.firestore {
         && resource.data.email == request.auth.token.email;
     }
 
+    // Índice de convites por e-mail: inviteLookup/{email}/farms/{farmId} aponta para o convite real.
+    // Permite achar convites sem índice de collectionGroup (links antigos sem o código da fazenda).
+    match /inviteLookup/{email}/farms/{farmId} {
+      allow read: if signedIn() && request.auth.token.email_verified == true && request.auth.token.email == email;
+      allow create, update: if canEdit(farmId)
+        && request.resource.data.keys().hasOnly(['farmId', 'createdAt'])
+        && request.resource.data.farmId == farmId;
+      allow delete: if canEdit(farmId) || (signedIn() && request.auth.token.email == email && isMember(farmId));
+    }
+
     match /farms/{farmId} {
       function validFarm() {
         return d().keys().hasOnly(['name', 'ownerUid', 'ownerName', 'ownerPhone', 'ownerDocument', 'logoUrl', 'alertDays', 'arroba', 'createdAt', 'updatedAt', 'deletedAt', 'deletedBy'])
@@ -61,10 +71,12 @@ service cloud.firestore {
       }
       allow read: if isMember(farmId);
       allow create: if signedIn() && d().ownerUid == request.auth.uid && validFarm();
-      // Exclusão = arquivamento (deletedAt). Só o proprietário pode marcar; os dados são preservados.
+      // Exclusão = arquivamento (deletedAt). Só o proprietário pode marcar ou restaurar (remover as
+      // duas marcas); os dados são sempre preservados.
       allow update: if canEdit(farmId) && unchanged('ownerUid') && validFarm()
         && (!d().diff(resource.data).affectedKeys().hasAny(['deletedAt', 'deletedBy'])
-            || (isOwner(farmId) && d().deletedBy == request.auth.uid && d().deletedAt == request.time));
+            || (isOwner(farmId) && d().deletedBy == request.auth.uid && d().deletedAt == request.time)
+            || (isOwner(farmId) && 'deletedAt' in resource.data && !('deletedAt' in d()) && !('deletedBy' in d())));
       allow delete: if false;
 
       match /members/{uid} {

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, writeBatch, type Timestamp } from 'firebase/firestore'
-import { ImagePlus, Mail, Moon, Sun, Trash2, UserPlus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { collectionGroup, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, where, writeBatch, type Timestamp } from 'firebase/firestore'
+import { ArchiveRestore, ImagePlus, Mail, Moon, Sun, Trash2, UserPlus } from 'lucide-react'
 import { auth, db } from '../lib/firebase'
 import { addLog, farmCol, farmDoc, friendlyError } from '../lib/db'
 import { ROLE_LABEL, type Member, type Role } from '../lib/types'
@@ -131,6 +131,22 @@ function Members() {
   useEffect(() => onSnapshot(farmCol(farm!.id, 'members'), (s) => setMembers(s.docs.map((d) => d.data() as Member)), () => setMembers([])), [farm])
   useEffect(() => { if (canEdit) return onSnapshot(farmCol(farm!.id, 'invites'), (s) => setInvites(s.docs.map((d) => d.data() as { email: string; role: Role })), () => {}) }, [farm, canEdit])
 
+  // Convites criados antes do índice por e-mail ganham a entrada em inviteLookup (uma vez por sessão).
+  const indexed = useRef(new Set<string>())
+  useEffect(() => {
+    if (!canEdit || !farm) return
+    const todo = invites.filter((i) => !indexed.current.has(`${farm.id}/${i.email}`))
+    if (!todo.length) return
+    const b = writeBatch(db)
+    for (const i of todo) { indexed.current.add(`${farm.id}/${i.email}`); b.set(doc(db, 'inviteLookup', i.email, 'farms', farm.id), { farmId: farm.id, createdAt: serverTimestamp() }) }
+    b.commit().catch(() => { for (const i of todo) indexed.current.delete(`${farm.id}/${i.email}`) })
+  }, [invites, farm, canEdit])
+
+  async function cancelInvite(mail: string) {
+    try { const b = writeBatch(db); b.delete(farmDoc(farm!.id, 'invites', mail)); b.delete(doc(db, 'inviteLookup', mail, 'farms', farm!.id)); await b.commit() }
+    catch (e) { toast('error', friendlyError(e)) }
+  }
+
   async function invite() {
     const mail = email.trim().toLowerCase()
     if (!/^\S+@\S+\.\S+$/.test(mail)) return toast('error', 'E-mail inválido.')
@@ -138,6 +154,8 @@ function Members() {
     try {
       const b = writeBatch(db)
       b.set(farmDoc(farm!.id, 'invites', mail), { email: mail, role: newRole, farmName: farm!.name, invitedBy: auth.currentUser!.uid, createdAt: serverTimestamp() })
+      b.set(doc(db, 'inviteLookup', mail, 'farms', farm!.id), { farmId: farm!.id, createdAt: serverTimestamp() })
+      indexed.current.add(`${farm!.id}/${mail}`)
       addLog(b, farm!.id, 'convite_criado', `${mail} como ${newRole}`)
       await b.commit()
       setEmail('')
@@ -183,7 +201,7 @@ function Members() {
               <span className="flex-1 truncate text-stone-500">{i.email}</span>
               <Badge tone="amber">Convite · {ROLE_LABEL[i.role]}</Badge>
               {canEdit && <Button size="sm" variant="ghost" onClick={() => copyLink(i.email)}>Copiar link</Button>}
-              <Button size="sm" variant="ghost" onClick={() => deleteDoc(farmDoc(farm!.id, 'invites', i.email)).catch((e) => toast('error', friendlyError(e)))} aria-label="Cancelar convite"><Trash2 className="size-4" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => cancelInvite(i.email)} aria-label="Cancelar convite"><Trash2 className="size-4" /></Button>
             </li>
           ))}
         </ul>
@@ -219,6 +237,50 @@ function Logs() {
               <span className="tabular shrink-0 text-stone-500">{l.at?.toDate().toLocaleString('pt-BR', { timeZone: 'America/Bahia', dateStyle: 'short', timeStyle: 'short' })}</span>
               <span className="font-medium">{l.action.replace(/_/g, ' ')}</span>
               <span className="truncate text-stone-500">{l.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/** Fazendas arquivadas das quais o usuário é proprietário (achadas pelos documentos de membro). */
+function ArchivedFarms() {
+  const { user, farms, restoreFarm } = useApp()
+  const toast = useToast()
+  const [list, setList] = useState<{ id: string; name: string; deletedAt?: Timestamp }[] | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    if (!user) return
+    let off = false
+    getDocs(query(collectionGroup(db, 'members'), where('uid', '==', user.uid))).then(async (snap) => {
+      const out = (await Promise.all(snap.docs.filter((m) => m.data().role === 'owner').map(async (m) => {
+        const id = m.ref.parent.parent!.id
+        const f = await getDoc(doc(db, 'farms', id)).catch(() => null)
+        return f?.exists() && f.data().deletedAt ? { id, name: (f.data().name as string) ?? 'Fazenda', deletedAt: f.data().deletedAt as Timestamp } : null
+      }))).filter((x): x is { id: string; name: string; deletedAt: Timestamp } => !!x)
+      if (!off) { out.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')); setList(out); setFailed(false) }
+    }).catch(() => { if (!off) { setFailed(true); setList([]) } })
+    return () => { off = true }
+  }, [user, farms, n])
+  async function restore(id: string, name: string) {
+    if (!window.confirm(`Restaurar a fazenda "${name}"? Ela voltará a aparecer para todos os usuários com acesso.`)) return
+    setBusy(id)
+    try { await restoreFarm(id, name); toast('success', 'Fazenda restaurada.'); setN((x) => x + 1) } catch (e) { toast('error', friendlyError(e)) } finally { setBusy(null) }
+  }
+  if (list === null) return null
+  if (!list.length && !failed) return null
+  return (
+    <Card title="Fazendas excluídas">
+      {failed ? <p className="p-4 text-sm text-stone-500">Não foi possível buscar as fazendas excluídas agora. Tente novamente mais tarde.</p> : (
+        <ul className="divide-y divide-stone-100 dark:divide-stone-800">
+          {list.map((f) => (
+            <li key={f.id} className="flex items-center gap-2 px-4 py-2.5 text-sm">
+              <span className="flex-1 truncate"><span className="font-medium">{f.name}</span>{f.deletedAt && <span className="block text-xs text-stone-500">Excluída em {f.deletedAt.toDate().toLocaleDateString('pt-BR', { timeZone: 'America/Bahia' })}</span>}</span>
+              <Button size="sm" variant="secondary" loading={busy === f.id} onClick={() => restore(f.id, f.name)}><ArchiveRestore className="size-4" />Restaurar</Button>
             </li>
           ))}
         </ul>
@@ -282,7 +344,7 @@ export default function Settings() {
           </Card>
         </div>
         <Members />
-        <MyFarms />
+        <div className="space-y-5"><MyFarms /><ArchivedFarms /></div>
         <Card title="Tipos de mão de obra">{dataReady ? <NamedList collection="laborTypes" items={laborTypes} noun="tipo" /> : <Spinner />}</Card>
         {canEdit && <div className="lg:col-span-2"><Logs /></div>}
       </div>

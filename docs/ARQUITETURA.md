@@ -13,6 +13,7 @@ users/{uid}                          perfil (só o próprio usuário)
 farms/{farmId}                       nome, dono, prazos de aviso, logotipo
   members/{uid}                      papel: owner | admin | viewer
   invites/{email}                    convites pendentes
+inviteLookup/{email}/farms/{farmId}  índice por e-mail que aponta para o convite (links antigos, sem índice de grupo)
   laborTypes/{id}                    tipos de mão de obra (inativáveis)
   expenseCategories/{id}             categorias de despesa (inativáveis)
   collaborators/{id}                 colaboradores (inativáveis, nunca excluídos)
@@ -154,3 +155,8 @@ Mesmo modelo do rebanho: o histórico é a fonte da verdade e o saldo é agregad
 - **Estorno**: movimentação inversa com id `rev-{id}` (só pode existir uma). Estornar entrada já consumida é recusado. A despesa vinculada (`stock-{id}` em `expenseEntries`) é removida.
 - **Integrações**: compra pode lançar despesa (categoria "Compra de estoque"); vacinação aplicada pode dar baixa em medicamento na mesma transação (`vac-{vacinação}`); saída pode ser ligada a um lote de animais (custo de alimentação por lote nos relatórios).
 - **Quantidades** são inteiras em milésimos (3 casas decimais), nunca ponto flutuante.
+
+
+## Restaurar fazenda arquivada
+
+Excluir uma fazenda grava `deletedAt` e `deletedBy` e remove só o atalho `users/{uid}/memberships/{farmId}`; os documentos de membro e todos os dados continuam. O proprietário encontra suas fazendas arquivadas pela consulta `collectionGroup('members')` por `uid` e restaura removendo as duas marcas (as regras só aceitam a remoção conjunta, feita pelo proprietário) e recriando o atalho.

@@ -56,7 +56,8 @@ Hoje o Worker **não está ligado ao GitHub**: cada versão é publicada com `wr
 2. Para instalar no celular:
    - **Android/Chrome:** menu ⋮ → *Instalar app*.
    - **iPhone/Safari:** Compartilhar → *Adicionar à Tela de Início*.
-3. Para dar acesso a outras pessoas, use **Configurações → Usuários autorizados → Convidar**: o link de convite é copiado para enviar por WhatsApp ou e-mail. A pessoa abre o link, cria conta com o mesmo e-mail, confirma o e-mail, toca em **Já confirmei** e aceita o convite. Quem já tem fazenda vê o convite no topo do app.
+3. Para dar acesso a outras pessoas, use **Configurações → Usuários autorizados → Convidar**: o link de convite é copiado para enviar por WhatsApp ou e-mail. A pessoa abre o link, cria conta com o mesmo e-mail, confirma o e-mail, toca em **Já confirmei** e aceita o convite. Quem já tem fazenda vê o convite no topo do app. Links antigos (sem o código da fazenda) também funcionam: o app guarda um índice `inviteLookup/{email}/farms/{farmId}`, criado junto com o convite e completado quando o proprietário ou administrador abre **Configurações**.
+4. **Fazendas excluídas:** o proprietário vê, em **Configurações → Fazendas excluídas**, as fazendas arquivadas e pode **Restaurar** cada uma (os dados nunca são apagados).
 
 Decisões de arquitetura: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
